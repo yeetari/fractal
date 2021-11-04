@@ -1,13 +1,17 @@
 #include "Vector.hh"
 #include "Window.hh"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "third-party/stb_image.h"
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
+#include <optional>
 
 #define VK_CHECK(expr, msg)                                                                                            \
     if (VkResult result = (expr); result != VK_SUCCESS && result != VK_INCOMPLETE) {                                   \
@@ -44,7 +48,7 @@ int main() {
     Window window(800, 600, false);
     VkApplicationInfo application_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "fractal",
+        .pApplicationName = "v2d",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
         .apiVersion = VK_MAKE_VERSION(1, 2, 0),
     };
@@ -167,6 +171,86 @@ int main() {
                  "Failed to create swapchain image view")
     }
 
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+    Vector<VkMemoryType> memory_types;
+    for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
+        memory_types.push(memory_properties.memoryTypes[i]);
+    }
+    auto allocate_memory = [&](const VkMemoryRequirements &requirements, VkMemoryPropertyFlags flags) {
+        std::optional<std::uint32_t> memory_type_index;
+        for (std::uint32_t i = 0; const auto &memory_type : memory_types) {
+            if ((requirements.memoryTypeBits & (1u << i++)) == 0) {
+                continue;
+            }
+            if ((memory_type.propertyFlags & flags) != flags) {
+                continue;
+            }
+            memory_type_index = i - 1;
+            break;
+        }
+        assert(memory_type_index);
+        VkMemoryAllocateInfo memory_ai{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = *memory_type_index,
+        };
+        VkDeviceMemory memory;
+        VK_CHECK(vkAllocateMemory(device, &memory_ai, nullptr, &memory), "Failed to allocate memory")
+        return memory;
+    };
+
+    std::uint32_t atlas_width;
+    std::uint32_t atlas_height;
+    auto *atlas_texture = stbi_load("../atlas.png", reinterpret_cast<int *>(&atlas_width),
+                                    reinterpret_cast<int *>(&atlas_height), nullptr, STBI_rgb_alpha);
+    assert(atlas_texture != nullptr);
+
+    VkBufferCreateInfo atlas_staging_buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = atlas_width * atlas_height * 4,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer atlas_staging_buffer = nullptr;
+    VK_CHECK(vkCreateBuffer(device, &atlas_staging_buffer_ci, nullptr, &atlas_staging_buffer),
+             "Failed to create atlas staging buffer")
+
+    VkMemoryRequirements atlas_staging_buffer_requirements;
+    vkGetBufferMemoryRequirements(device, atlas_staging_buffer, &atlas_staging_buffer_requirements);
+
+    VkDeviceMemory atlas_staging_buffer_memory = allocate_memory(
+        atlas_staging_buffer_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VK_CHECK(vkBindBufferMemory(device, atlas_staging_buffer, atlas_staging_buffer_memory, 0),
+             "Failed to bind atlas staging buffer memory")
+
+    void *staging_data;
+    vkMapMemory(device, atlas_staging_buffer_memory, 0, VK_WHOLE_SIZE, 0, &staging_data);
+    std::memcpy(staging_data, atlas_texture, atlas_width * atlas_height * 4);
+    vkUnmapMemory(device, atlas_staging_buffer_memory);
+    stbi_image_free(atlas_texture);
+
+    VkImageCreateInfo atlas_image_ci{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .extent = {atlas_width, atlas_height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage atlas_image;
+    VK_CHECK(vkCreateImage(device, &atlas_image_ci, nullptr, &atlas_image), "Failed to create atlas image")
+
+    VkMemoryRequirements atlas_image_requirements;
+    vkGetImageMemoryRequirements(device, atlas_image, &atlas_image_requirements);
+    VkDeviceMemory atlas_image_memory = allocate_memory(atlas_image_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VK_CHECK(vkBindImageMemory(device, atlas_image, atlas_image_memory, 0), "Failed to bind atlas image memory")
+
     VkCommandPool command_pool = nullptr;
     VkQueue queue = nullptr;
     for (std::uint32_t i = 0; i < queue_families.size(); i++) {
@@ -191,6 +275,130 @@ int main() {
     };
     VkCommandBuffer command_buffer = nullptr;
     VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &command_buffer), "Failed to allocate command buffer")
+
+    VkImageMemoryBarrier atlas_transition_barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .image = atlas_image,
+        .subresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    VkCommandBufferBeginInfo transfer_buffer_bi{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    vkBeginCommandBuffer(command_buffer, &transfer_buffer_bi);
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &atlas_transition_barrier);
+    VkBufferImageCopy atlas_copy{
+        .imageSubresource{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .imageExtent = {atlas_width, atlas_height, 1},
+    };
+    vkCmdCopyBufferToImage(command_buffer, atlas_staging_buffer, atlas_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                           &atlas_copy);
+    atlas_transition_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    atlas_transition_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    atlas_transition_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    atlas_transition_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &atlas_transition_barrier);
+    vkEndCommandBuffer(command_buffer);
+    VkSubmitInfo transfer_si{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command_buffer,
+    };
+    vkQueueSubmit(queue, 1, &transfer_si, nullptr);
+    vkQueueWaitIdle(queue);
+    vkFreeMemory(device, atlas_staging_buffer_memory, nullptr);
+    vkDestroyBuffer(device, atlas_staging_buffer, nullptr);
+
+    VkImageViewCreateInfo atlas_image_view_ci{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = atlas_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = atlas_image_ci.format,
+        .subresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    VkImageView atlas_image_view = nullptr;
+    VK_CHECK(vkCreateImageView(device, &atlas_image_view_ci, nullptr, &atlas_image_view),
+             "Failed to create atlas image view")
+
+    VkSamplerCreateInfo atlas_sampler_ci{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    VkSampler atlas_sampler = nullptr;
+    VK_CHECK(vkCreateSampler(device, &atlas_sampler_ci, nullptr, &atlas_sampler), "Failed to create atlas sampler")
+
+    VkDescriptorPoolSize descriptor_pool_size{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+    };
+    VkDescriptorPoolCreateInfo descriptor_pool_ci{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &descriptor_pool_size,
+    };
+    VkDescriptorPool descriptor_pool = nullptr;
+    VK_CHECK(vkCreateDescriptorPool(device, &descriptor_pool_ci, nullptr, &descriptor_pool),
+             "Failed to create descriptor pool")
+
+    VkDescriptorSetLayoutBinding atlas_binding{
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &atlas_binding,
+    };
+    VkDescriptorSetLayout descriptor_set_layout = nullptr;
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_ci, nullptr, &descriptor_set_layout),
+             "Failed to create descriptor set layout")
+
+    VkDescriptorSetAllocateInfo descriptor_set_ai{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &descriptor_set_layout,
+    };
+    VkDescriptorSet descriptor_set = nullptr;
+    VK_CHECK(vkAllocateDescriptorSets(device, &descriptor_set_ai, &descriptor_set), "Failed to allocate descriptor set")
+
+    VkDescriptorImageInfo atlas_image_info{
+        .sampler = atlas_sampler,
+        .imageView = atlas_image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    VkWriteDescriptorSet descriptor_write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_set,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &atlas_image_info,
+    };
+    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, nullptr);
 
     VkAttachmentDescription attachment{
         .format = surface_format.format,
@@ -248,8 +456,16 @@ int main() {
     VkFramebuffer framebuffer = nullptr;
     VK_CHECK(vkCreateFramebuffer(device, &framebuffer_ci, nullptr, &framebuffer), "Failed to create framebuffer")
 
+    VkPushConstantRange push_constant_range{
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .size = sizeof(float) * 4,
+    };
     VkPipelineLayoutCreateInfo pipeline_layout_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &push_constant_range,
     };
     VkPipelineLayout pipeline_layout = nullptr;
     VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_ci, nullptr, &pipeline_layout),
@@ -354,7 +570,12 @@ int main() {
     VK_CHECK(vkCreateSemaphore(device, &semaphore_ci, nullptr, &rendering_finished_semaphore),
              "Failed to create semaphore")
 
+    float count = 0.0f;
+    float previous_time = 0.0f;
     while (!window.should_close()) {
+        auto current_time = static_cast<float>(glfwGetTime());
+        float dt = current_time - previous_time;
+        previous_time = current_time;
         std::uint32_t image_index = 0;
         vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore,
                               nullptr, &image_index);
@@ -385,8 +606,20 @@ int main() {
             .pClearValues = &clear_value,
         };
         vkCmdBeginRenderPass(command_buffer, &render_pass_bi, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set,
+                                0, nullptr);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdDraw(command_buffer, 3, 1, 0, 0);
+        double xpos;
+        double ypos;
+        glfwGetCursorPos(*window, &xpos, &ypos);
+        std::array<float, 4> transform{std::sin(count), std::cos(count), static_cast<float>(xpos) / 800.0f,
+                                       static_cast<float>(ypos) / 600.0f};
+        float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
+        transform[0] = scale / 800.0f;
+        transform[1] = scale / 600.0f;
+        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4,
+                           transform.data());
+        vkCmdDraw(command_buffer, 6, 1, 0, 0);
         vkCmdEndRenderPass(command_buffer);
         vkEndCommandBuffer(command_buffer);
 
@@ -413,6 +646,7 @@ int main() {
         };
         vkQueuePresentKHR(present_queue, &present_info);
         Window::poll_events();
+        count += dt;
     }
     vkDeviceWaitIdle(device);
     vkDestroySemaphore(device, rendering_finished_semaphore, nullptr);
@@ -424,7 +658,13 @@ int main() {
     vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
     vkDestroyFramebuffer(device, framebuffer, nullptr);
     vkDestroyRenderPass(device, render_pass, nullptr);
+    vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
+    vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+    vkDestroySampler(device, atlas_sampler, nullptr);
+    vkDestroyImageView(device, atlas_image_view, nullptr);
     vkDestroyCommandPool(device, command_pool, nullptr);
+    vkFreeMemory(device, atlas_image_memory, nullptr);
+    vkDestroyImage(device, atlas_image, nullptr);
     for (auto *image_view : swapchain_image_views) {
         vkDestroyImageView(device, image_view, nullptr);
     }

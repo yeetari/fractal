@@ -22,7 +22,7 @@ Window::Window(std::uint32_t width, std::uint32_t height, bool fullscreen) : m_w
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    m_window = glfwCreateWindow(static_cast<int>(width), static_cast<int>(height), "fractal",
+    m_window = glfwCreateWindow(static_cast<int>(width), static_cast<int>(height), "v2d",
                                 fullscreen ? glfwGetPrimaryMonitor() : nullptr, nullptr);
     if (m_window == nullptr) {
         std::fputs("Failed to create window", stderr);

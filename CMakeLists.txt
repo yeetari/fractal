@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(fractal CXX)
+project(v2d CXX)
 
 find_package(glfw3 QUIET)
 find_package(Vulkan REQUIRED)
@@ -16,11 +16,11 @@ function(target_add_shader target shader)
     set_property(TARGET ${target} APPEND PROPERTY SOURCES ${output})
 endfunction()
 
-add_executable(fractal
+add_executable(v2d
     main.cc
     Window.cc)
-target_add_shader(fractal main.frag)
-target_add_shader(fractal main.vert)
-target_compile_definitions(fractal PRIVATE GLFW_INCLUDE_VULKAN)
-target_compile_features(fractal PRIVATE cxx_std_20)
-target_link_libraries(fractal PRIVATE glfw Vulkan::Vulkan)
+target_add_shader(v2d main.frag)
+target_add_shader(v2d main.vert)
+target_compile_definitions(v2d PRIVATE GLFW_INCLUDE_VULKAN)
+target_compile_features(v2d PRIVATE cxx_std_20)
+target_link_libraries(v2d PRIVATE glfw Vulkan::Vulkan)

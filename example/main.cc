@@ -1,7 +1,9 @@
 #include <v2d/core/Window.hh>
 #include <v2d/maths/Vec.hh>
+#include <v2d/support/Assert.hh>
 #include <v2d/support/Vector.hh>
 
+#define STBI_ASSERT(x) V2D_ASSERT(x)
 #define STB_IMAGE_IMPLEMENTATION
 #include <GLFW/glfw3.h>
 #include <stb_image.h>
@@ -35,7 +37,7 @@ struct ObjectData {
 
 VkShaderModule load_shader(VkDevice device, const char *path) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
-    assert(file);
+    V2D_ENSURE(file);
     v2d::Vector<char> binary(file.tellg());
     file.seekg(0);
     file.read(binary.data(), binary.size());
@@ -196,7 +198,7 @@ int main() {
             memory_type_index = i - 1;
             break;
         }
-        assert(memory_type_index);
+        V2D_ENSURE(memory_type_index);
         VkMemoryAllocateInfo memory_ai{
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .allocationSize = requirements.size,
@@ -211,7 +213,7 @@ int main() {
     std::uint32_t atlas_height;
     auto *atlas_texture = stbi_load("atlas.png", reinterpret_cast<int *>(&atlas_width),
                                     reinterpret_cast<int *>(&atlas_height), nullptr, STBI_rgb_alpha);
-    assert(atlas_texture != nullptr);
+    V2D_ENSURE(atlas_texture != nullptr);
 
     VkBufferCreateInfo atlas_staging_buffer_ci{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,

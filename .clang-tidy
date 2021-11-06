@@ -231,6 +231,6 @@ Checks: >
 FormatStyle: file
 CheckOptions:
   - key: bugprone-assert-side-effect.AssertMacros
-    value: ASSERT,ASSERT_PEDANTIC
+    value: V2D_ASSERT,V2D_ASSERT_PEDANTIC,V2D_ENSURE
   - key: readability-uppercase-literal-suffix.NewSuffixes
     value: f;u;l;ul;ull

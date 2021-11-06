@@ -1,7 +1,8 @@
 #pragma once
 
+#include <v2d/support/Assert.hh>
+
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -129,7 +130,7 @@ void Vector<T, SizeType>::grow(SizeType size, Args &&...args) {
 
 template <typename T, typename SizeType>
 void Vector<T, SizeType>::reallocate(SizeType capacity) {
-    assert(capacity >= m_size);
+    V2D_ASSERT(capacity >= m_size);
     T *new_data = reinterpret_cast<T *>(new std::uint8_t[capacity * sizeof(T)]);
     if constexpr (!std::is_trivially_copyable_v<T>) {
         for (auto *data = new_data; auto &elem : *this) {
@@ -176,13 +177,13 @@ void Vector<T, SizeType>::push(T &&elem) {
 
 template <typename T, typename SizeType>
 T &Vector<T, SizeType>::operator[](SizeType index) {
-    assert(index < m_size);
+    V2D_ASSERT(index < m_size);
     return begin()[index];
 }
 
 template <typename T, typename SizeType>
 const T &Vector<T, SizeType>::operator[](SizeType index) const {
-    assert(index < m_size);
+    V2D_ASSERT(index < m_size);
     return begin()[index];
 }
 

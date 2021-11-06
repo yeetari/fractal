@@ -1,6 +1,7 @@
 #pragma once
 
 #include <v2d/support/Assert.hh>
+#include <v2d/support/Span.hh>
 
 #include <algorithm>
 #include <cstddef>
@@ -39,6 +40,9 @@ public:
     T &emplace(Args &&...args);
     void push(const T &elem);
     void push(T &&elem);
+
+    Span<T> span() { return {m_data, m_size}; }
+    Span<const T> span() const { return {m_data, m_size}; }
 
     T *begin() { return m_data; }
     T *end() { return m_data + m_size; }

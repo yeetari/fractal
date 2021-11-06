@@ -3,8 +3,8 @@ project(v2d CXX)
 
 option(V2D_BUILD_EXAMPLE "Build example" OFF)
 
-find_package(glfw3 QUIET)
 find_package(Vulkan REQUIRED)
+find_package(X11 REQUIRED)
 find_program(GLSLC glslc REQUIRED)
 
 function(target_add_shader target shader)
@@ -22,11 +22,10 @@ add_library(v2d)
 target_add_shader(v2d shaders/main.frag)
 target_add_shader(v2d shaders/main.vert)
 add_subdirectory(sources)
-target_compile_definitions(v2d PUBLIC GLFW_INCLUDE_VULKAN)
 target_compile_features(v2d PRIVATE cxx_std_20)
 target_include_directories(v2d PUBLIC include)
 target_include_directories(v2d SYSTEM PUBLIC third-party)
-target_link_libraries(v2d PUBLIC glfw Vulkan::Vulkan)
+target_link_libraries(v2d PUBLIC Vulkan::Vulkan X11::xcb X11::xcb_util)
 
 if(V2D_BUILD_EXAMPLE)
     add_executable(v2d-example)

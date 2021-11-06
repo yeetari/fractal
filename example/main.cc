@@ -5,10 +5,10 @@
 
 #define STBI_ASSERT(x) V2D_ASSERT(x)
 #define STB_IMAGE_IMPLEMENTATION
-#include <GLFW/glfw3.h>
 #include <stb_image.h>
 #include <vulkan/vulkan_core.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -54,7 +54,7 @@ VkShaderModule load_shader(VkDevice device, const char *path) {
 } // namespace
 
 int main() {
-    v2d::Window window(800, 600, false);
+    v2d::Window window(800, 600);
     VkApplicationInfo application_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "v2d",
@@ -114,9 +114,7 @@ int main() {
     VkDevice device = nullptr;
     VK_CHECK(vkCreateDevice(physical_device, &device_ci, nullptr, &device), "Failed to create device")
 
-    VkSurfaceKHR surface = nullptr;
-    VK_CHECK(glfwCreateWindowSurface(instance, *window, nullptr, &surface), "Failed to create surface")
-
+    VkSurfaceKHR surface = window.create_surface(instance);
     VkSurfaceCapabilitiesKHR surface_capabilities{};
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities),
              "Failed to get surface capabilities")
@@ -632,10 +630,10 @@ int main() {
     vkMapMemory(device, object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
 
     float count = 0.0f;
-    float previous_time = 0.0f;
+    std::chrono::time_point<std::chrono::steady_clock> previous_time;
     while (!window.should_close()) {
-        auto current_time = static_cast<float>(glfwGetTime());
-        float dt = current_time - previous_time;
+        auto current_time = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float, std::chrono::seconds::period>(current_time - previous_time).count();
         previous_time = current_time;
         std::uint32_t image_index = 0;
         vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore,
@@ -670,22 +668,17 @@ int main() {
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set,
                                 0, nullptr);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        double xpos;
-        double ypos;
-        glfwGetCursorPos(*window, &xpos, &ypos);
         float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
         object_data[0].scale = {scale / 800.0f, scale / 600.0f};
         object_data[0].sprite_cell = {0.0f, 0.0f};
-        object_data[0].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
+        object_data[0].translation = window.mouse_position() / window.resolution();
         scale = 42.0f * std::abs(std::cos(count)) * 8.0f;
-        xpos += 200.0f;
         object_data[1].scale = {scale / 800.0f, scale / 600.0f};
         object_data[1].sprite_cell = {1.0f, 0.0f};
-        object_data[1].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
-        xpos -= 400.0f;
+        object_data[1].translation = (window.mouse_position() - v2d::Vec2f(200.0f, 0.0f)) / window.resolution();
         object_data[2].scale = {scale / 800.0f, scale / 600.0f};
         object_data[2].sprite_cell = {1.0f, 0.0f};
-        object_data[2].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
+        object_data[2].translation = (window.mouse_position() + v2d::Vec2f(200.0f, 0.0f)) / window.resolution();
         vkCmdDraw(command_buffer, 6, 3, 0, 0);
         vkCmdEndRenderPass(command_buffer);
         vkEndCommandBuffer(command_buffer);
@@ -712,7 +705,7 @@ int main() {
             .pImageIndices = &image_index,
         };
         vkQueuePresentKHR(present_queue, &present_info);
-        v2d::Window::poll_events();
+        window.poll_events();
         count += dt;
     }
     vkDeviceWaitIdle(device);

@@ -1,3 +1,4 @@
+#include <v2d/core/Context.hh>
 #include <v2d/core/Window.hh>
 #include <v2d/maths/Vec.hh>
 #include <v2d/support/Assert.hh>
@@ -55,76 +56,18 @@ VkShaderModule load_shader(VkDevice device, const char *path) {
 
 int main() {
     v2d::Window window(800, 600);
-    VkApplicationInfo application_info{
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "v2d",
-        .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
-        .apiVersion = VK_MAKE_VERSION(1, 2, 0),
-    };
-    const auto required_extensions = v2d::Window::required_instance_extensions();
-    VkInstanceCreateInfo instance_ci{
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &application_info,
-        .enabledExtensionCount = static_cast<std::uint32_t>(required_extensions.size()),
-        .ppEnabledExtensionNames = required_extensions.data(),
-    };
-#ifndef NDEBUG
-    // TODO: Check for existence.
-    const char *validation_layer_name = "VK_LAYER_KHRONOS_validation";
-    instance_ci.enabledLayerCount = 1;
-    instance_ci.ppEnabledLayerNames = &validation_layer_name;
-#endif
-    VkInstance instance = nullptr;
-    VK_CHECK(vkCreateInstance(&instance_ci, nullptr, &instance), "Failed to create instance")
-
-    VkPhysicalDevice physical_device = nullptr;
-    std::uint32_t physical_device_count = 1;
-    VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_device_count, &physical_device),
-             "Failed to get physical device")
-
-    std::uint32_t queue_family_count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
-    v2d::Vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
-
-    v2d::Vector<VkDeviceQueueCreateInfo> queue_cis;
-    const float queue_priority = 1.0f;
-    for (std::uint32_t i = 0; i < queue_families.size(); i++) {
-        queue_cis.push({
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = i,
-            .queueCount = 1,
-            .pQueuePriorities = &queue_priority,
-        });
-    }
-
-    const char *swapchain_extension_name = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-    VkPhysicalDeviceVulkan12Features device_12_features{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .imagelessFramebuffer = VK_TRUE,
-    };
-    VkDeviceCreateInfo device_ci{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &device_12_features,
-        .queueCreateInfoCount = queue_cis.size(),
-        .pQueueCreateInfos = queue_cis.data(),
-        .enabledExtensionCount = 1,
-        .ppEnabledExtensionNames = &swapchain_extension_name,
-    };
-    VkDevice device = nullptr;
-    VK_CHECK(vkCreateDevice(physical_device, &device_ci, nullptr, &device), "Failed to create device")
-
-    VkSurfaceKHR surface = window.create_surface(instance);
+    v2d::Context context(v2d::Window::required_instance_extensions());
+    VkSurfaceKHR surface = window.create_surface(context.instance());
     VkSurfaceCapabilitiesKHR surface_capabilities{};
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities),
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context.physical_device(), surface, &surface_capabilities),
              "Failed to get surface capabilities")
 
     VkQueue present_queue = nullptr;
-    for (std::uint32_t i = 0; i < queue_families.size(); i++) {
+    for (std::uint32_t i = 0; i < context.queue_families().size(); i++) {
         VkBool32 present_supported = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &present_supported);
+        vkGetPhysicalDeviceSurfaceSupportKHR(context.physical_device(), i, surface, &present_supported);
         if (present_supported == VK_TRUE) {
-            vkGetDeviceQueue(device, i, 0, &present_queue);
+            vkGetDeviceQueue(context.device(), i, 0, &present_queue);
             break;
         }
     }
@@ -149,13 +92,13 @@ int main() {
         .clipped = VK_TRUE,
     };
     VkSwapchainKHR swapchain = nullptr;
-    VK_CHECK(vkCreateSwapchainKHR(device, &swapchain_ci, nullptr, &swapchain), "Failed to create swapchain")
+    VK_CHECK(vkCreateSwapchainKHR(context.device(), &swapchain_ci, nullptr, &swapchain), "Failed to create swapchain")
 
     std::uint32_t swapchain_image_count = 0;
-    vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr);
+    vkGetSwapchainImagesKHR(context.device(), swapchain, &swapchain_image_count, nullptr);
     v2d::Vector<VkImage> swapchain_images(swapchain_image_count);
     v2d::Vector<VkImageView> swapchain_image_views(swapchain_image_count);
-    vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_images.data());
+    vkGetSwapchainImagesKHR(context.device(), swapchain, &swapchain_image_count, swapchain_images.data());
     for (std::uint32_t i = 0; i < swapchain_image_count; i++) {
         VkImageViewCreateInfo image_view_ci{
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -174,12 +117,12 @@ int main() {
                 .layerCount = 1,
             },
         };
-        VK_CHECK(vkCreateImageView(device, &image_view_ci, nullptr, &swapchain_image_views[i]),
+        VK_CHECK(vkCreateImageView(context.device(), &image_view_ci, nullptr, &swapchain_image_views[i]),
                  "Failed to create swapchain image view")
     }
 
     VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &memory_properties);
     v2d::Vector<VkMemoryType> memory_types;
     for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
         memory_types.push(memory_properties.memoryTypes[i]);
@@ -203,7 +146,7 @@ int main() {
             .memoryTypeIndex = *memory_type_index,
         };
         VkDeviceMemory memory;
-        VK_CHECK(vkAllocateMemory(device, &memory_ai, nullptr, &memory), "Failed to allocate memory")
+        VK_CHECK(vkAllocateMemory(context.device(), &memory_ai, nullptr, &memory), "Failed to allocate memory")
         return memory;
     };
 
@@ -220,21 +163,21 @@ int main() {
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
     VkBuffer atlas_staging_buffer = nullptr;
-    VK_CHECK(vkCreateBuffer(device, &atlas_staging_buffer_ci, nullptr, &atlas_staging_buffer),
+    VK_CHECK(vkCreateBuffer(context.device(), &atlas_staging_buffer_ci, nullptr, &atlas_staging_buffer),
              "Failed to create atlas staging buffer")
 
     VkMemoryRequirements atlas_staging_buffer_requirements;
-    vkGetBufferMemoryRequirements(device, atlas_staging_buffer, &atlas_staging_buffer_requirements);
+    vkGetBufferMemoryRequirements(context.device(), atlas_staging_buffer, &atlas_staging_buffer_requirements);
 
     VkDeviceMemory atlas_staging_buffer_memory = allocate_memory(
         atlas_staging_buffer_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkBindBufferMemory(device, atlas_staging_buffer, atlas_staging_buffer_memory, 0),
+    VK_CHECK(vkBindBufferMemory(context.device(), atlas_staging_buffer, atlas_staging_buffer_memory, 0),
              "Failed to bind atlas staging buffer memory")
 
     void *staging_data;
-    vkMapMemory(device, atlas_staging_buffer_memory, 0, VK_WHOLE_SIZE, 0, &staging_data);
+    vkMapMemory(context.device(), atlas_staging_buffer_memory, 0, VK_WHOLE_SIZE, 0, &staging_data);
     std::memcpy(staging_data, atlas_texture, atlas_width * atlas_height * 4);
-    vkUnmapMemory(device, atlas_staging_buffer_memory);
+    vkUnmapMemory(context.device(), atlas_staging_buffer_memory);
     stbi_image_free(atlas_texture);
 
     VkImageCreateInfo atlas_image_ci{
@@ -251,25 +194,25 @@ int main() {
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
     VkImage atlas_image;
-    VK_CHECK(vkCreateImage(device, &atlas_image_ci, nullptr, &atlas_image), "Failed to create atlas image")
+    VK_CHECK(vkCreateImage(context.device(), &atlas_image_ci, nullptr, &atlas_image), "Failed to create atlas image")
 
     VkMemoryRequirements atlas_image_requirements;
-    vkGetImageMemoryRequirements(device, atlas_image, &atlas_image_requirements);
+    vkGetImageMemoryRequirements(context.device(), atlas_image, &atlas_image_requirements);
     VkDeviceMemory atlas_image_memory = allocate_memory(atlas_image_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK(vkBindImageMemory(device, atlas_image, atlas_image_memory, 0), "Failed to bind atlas image memory")
+    VK_CHECK(vkBindImageMemory(context.device(), atlas_image, atlas_image_memory, 0), "Failed to bind atlas image memory")
 
     VkCommandPool command_pool = nullptr;
     VkQueue queue = nullptr;
-    for (std::uint32_t i = 0; i < queue_families.size(); i++) {
-        const auto &family = queue_families[i];
+    for (std::uint32_t i = 0; i < context.queue_families().size(); i++) {
+        const auto &family = context.queue_families()[i];
         if ((family.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0u) {
             VkCommandPoolCreateInfo command_pool_ci{
                 .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                 .queueFamilyIndex = i,
             };
-            VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &command_pool),
+            VK_CHECK(vkCreateCommandPool(context.device(), &command_pool_ci, nullptr, &command_pool),
                      "Failed to create command pool")
-            vkGetDeviceQueue(device, i, 0, &queue);
+            vkGetDeviceQueue(context.device(), i, 0, &queue);
             break;
         }
     }
@@ -281,7 +224,7 @@ int main() {
         .commandBufferCount = 1,
     };
     VkCommandBuffer command_buffer = nullptr;
-    VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &command_buffer), "Failed to allocate command buffer")
+    VK_CHECK(vkAllocateCommandBuffers(context.device(), &command_buffer_ai, &command_buffer), "Failed to allocate command buffer")
 
     VkImageMemoryBarrier atlas_transition_barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -325,8 +268,8 @@ int main() {
     };
     vkQueueSubmit(queue, 1, &transfer_si, nullptr);
     vkQueueWaitIdle(queue);
-    vkFreeMemory(device, atlas_staging_buffer_memory, nullptr);
-    vkDestroyBuffer(device, atlas_staging_buffer, nullptr);
+    vkFreeMemory(context.device(), atlas_staging_buffer_memory, nullptr);
+    vkDestroyBuffer(context.device(), atlas_staging_buffer, nullptr);
 
     VkImageViewCreateInfo atlas_image_view_ci{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -340,7 +283,7 @@ int main() {
         },
     };
     VkImageView atlas_image_view = nullptr;
-    VK_CHECK(vkCreateImageView(device, &atlas_image_view_ci, nullptr, &atlas_image_view),
+    VK_CHECK(vkCreateImageView(context.device(), &atlas_image_view_ci, nullptr, &atlas_image_view),
              "Failed to create atlas image view")
 
     VkSamplerCreateInfo atlas_sampler_ci{
@@ -353,7 +296,7 @@ int main() {
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     };
     VkSampler atlas_sampler = nullptr;
-    VK_CHECK(vkCreateSampler(device, &atlas_sampler_ci, nullptr, &atlas_sampler), "Failed to create atlas sampler")
+    VK_CHECK(vkCreateSampler(context.device(), &atlas_sampler_ci, nullptr, &atlas_sampler), "Failed to create atlas sampler")
 
     VkBufferCreateInfo object_buffer_ci{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -362,14 +305,14 @@ int main() {
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
     VkBuffer object_buffer = nullptr;
-    VK_CHECK(vkCreateBuffer(device, &object_buffer_ci, nullptr, &object_buffer), "Failed to create object buffer")
+    VK_CHECK(vkCreateBuffer(context.device(), &object_buffer_ci, nullptr, &object_buffer), "Failed to create object buffer")
 
     VkMemoryRequirements object_buffer_requirements;
-    vkGetBufferMemoryRequirements(device, object_buffer, &object_buffer_requirements);
+    vkGetBufferMemoryRequirements(context.device(), object_buffer, &object_buffer_requirements);
     VkDeviceMemory object_buffer_memory = allocate_memory(
         object_buffer_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkBindBufferMemory(device, object_buffer, object_buffer_memory, 0), "Failed to object buffer memory")
+    VK_CHECK(vkBindBufferMemory(context.device(), object_buffer, object_buffer_memory, 0), "Failed to object buffer memory")
 
     std::array descriptor_pool_sizes{
         VkDescriptorPoolSize{
@@ -388,7 +331,7 @@ int main() {
         .pPoolSizes = descriptor_pool_sizes.data(),
     };
     VkDescriptorPool descriptor_pool = nullptr;
-    VK_CHECK(vkCreateDescriptorPool(device, &descriptor_pool_ci, nullptr, &descriptor_pool),
+    VK_CHECK(vkCreateDescriptorPool(context.device(), &descriptor_pool_ci, nullptr, &descriptor_pool),
              "Failed to create descriptor pool")
 
     std::array descriptor_bindings{
@@ -413,7 +356,7 @@ int main() {
         .pBindings = descriptor_bindings.data(),
     };
     VkDescriptorSetLayout descriptor_set_layout = nullptr;
-    VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_ci, nullptr, &descriptor_set_layout),
+    VK_CHECK(vkCreateDescriptorSetLayout(context.device(), &descriptor_set_layout_ci, nullptr, &descriptor_set_layout),
              "Failed to create descriptor set layout")
 
     VkDescriptorSetAllocateInfo descriptor_set_ai{
@@ -423,7 +366,7 @@ int main() {
         .pSetLayouts = &descriptor_set_layout,
     };
     VkDescriptorSet descriptor_set = nullptr;
-    VK_CHECK(vkAllocateDescriptorSets(device, &descriptor_set_ai, &descriptor_set), "Failed to allocate descriptor set")
+    VK_CHECK(vkAllocateDescriptorSets(context.device(), &descriptor_set_ai, &descriptor_set), "Failed to allocate descriptor set")
 
     VkDescriptorImageInfo atlas_image_info{
         .sampler = atlas_sampler,
@@ -452,7 +395,7 @@ int main() {
             .pBufferInfo = &object_buffer_info,
         },
     };
-    vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0,
+    vkUpdateDescriptorSets(context.device(), static_cast<std::uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0,
                            nullptr);
 
     VkAttachmentDescription attachment{
@@ -482,7 +425,7 @@ int main() {
         .pSubpasses = &subpass,
     };
     VkRenderPass render_pass = nullptr;
-    VK_CHECK(vkCreateRenderPass(device, &render_pass_ci, nullptr, &render_pass), "Failed to create render pass")
+    VK_CHECK(vkCreateRenderPass(context.device(), &render_pass_ci, nullptr, &render_pass), "Failed to create render pass")
 
     VkFramebufferAttachmentImageInfo attachment_info{
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
@@ -509,7 +452,7 @@ int main() {
         .layers = 1,
     };
     VkFramebuffer framebuffer = nullptr;
-    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_ci, nullptr, &framebuffer), "Failed to create framebuffer")
+    VK_CHECK(vkCreateFramebuffer(context.device(), &framebuffer_ci, nullptr, &framebuffer), "Failed to create framebuffer")
 
     VkPipelineLayoutCreateInfo pipeline_layout_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -517,7 +460,7 @@ int main() {
         .pSetLayouts = &descriptor_set_layout,
     };
     VkPipelineLayout pipeline_layout = nullptr;
-    VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_ci, nullptr, &pipeline_layout),
+    VK_CHECK(vkCreatePipelineLayout(context.device(), &pipeline_layout_ci, nullptr, &pipeline_layout),
              "Failed to create pipeline layout")
 
     VkPipelineVertexInputStateCreateInfo vertex_input{
@@ -576,8 +519,8 @@ int main() {
         .pAttachments = &blend_attachment,
     };
 
-    auto *vertex_shader = load_shader(device, "shaders/main.vert.spv");
-    auto *fragment_shader = load_shader(device, "shaders/main.frag.spv");
+    auto *vertex_shader = load_shader(context.device(), "shaders/main.vert.spv");
+    auto *fragment_shader = load_shader(context.device(), "shaders/main.frag.spv");
     std::array shader_stage_cis{
         VkPipelineShaderStageCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -606,7 +549,7 @@ int main() {
         .renderPass = render_pass,
     };
     VkPipeline pipeline = nullptr;
-    VK_CHECK(vkCreateGraphicsPipelines(device, nullptr, 1, &pipeline_ci, nullptr, &pipeline),
+    VK_CHECK(vkCreateGraphicsPipelines(context.device(), nullptr, 1, &pipeline_ci, nullptr, &pipeline),
              "Failed to create pipeline")
 
     VkFenceCreateInfo fence_ci{
@@ -614,20 +557,20 @@ int main() {
         .flags = VK_FENCE_CREATE_SIGNALED_BIT,
     };
     VkFence fence = nullptr;
-    VK_CHECK(vkCreateFence(device, &fence_ci, nullptr, &fence), "Failed to create fence")
+    VK_CHECK(vkCreateFence(context.device(), &fence_ci, nullptr, &fence), "Failed to create fence")
 
     VkSemaphoreCreateInfo semaphore_ci{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
     VkSemaphore image_available_semaphore = nullptr;
     VkSemaphore rendering_finished_semaphore = nullptr;
-    VK_CHECK(vkCreateSemaphore(device, &semaphore_ci, nullptr, &image_available_semaphore),
+    VK_CHECK(vkCreateSemaphore(context.device(), &semaphore_ci, nullptr, &image_available_semaphore),
              "Failed to create semaphore")
-    VK_CHECK(vkCreateSemaphore(device, &semaphore_ci, nullptr, &rendering_finished_semaphore),
+    VK_CHECK(vkCreateSemaphore(context.device(), &semaphore_ci, nullptr, &rendering_finished_semaphore),
              "Failed to create semaphore")
 
     ObjectData *object_data;
-    vkMapMemory(device, object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
+    vkMapMemory(context.device(), object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
 
     float count = 0.0f;
     std::chrono::time_point<std::chrono::steady_clock> previous_time;
@@ -636,13 +579,13 @@ int main() {
         float dt = std::chrono::duration<float, std::chrono::seconds::period>(current_time - previous_time).count();
         previous_time = current_time;
         std::uint32_t image_index = 0;
-        vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore,
+        vkAcquireNextImageKHR(context.device(), swapchain, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore,
                               nullptr, &image_index);
         // TODO: Record command buffer here, before waiting for fence, instead?
-        vkWaitForFences(device, 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
-        vkResetFences(device, 1, &fence);
+        vkWaitForFences(context.device(), 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
+        vkResetFences(context.device(), 1, &fence);
 
-        vkResetCommandPool(device, command_pool, 0);
+        vkResetCommandPool(context.device(), command_pool, 0);
         VkCommandBufferBeginInfo cmd_buf_bi{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -708,31 +651,29 @@ int main() {
         window.poll_events();
         count += dt;
     }
-    vkDeviceWaitIdle(device);
-    vkUnmapMemory(device, object_buffer_memory);
-    vkDestroySemaphore(device, rendering_finished_semaphore, nullptr);
-    vkDestroySemaphore(device, image_available_semaphore, nullptr);
-    vkDestroyFence(device, fence, nullptr);
-    vkDestroyPipeline(device, pipeline, nullptr);
-    vkDestroyShaderModule(device, fragment_shader, nullptr);
-    vkDestroyShaderModule(device, vertex_shader, nullptr);
-    vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
-    vkDestroyFramebuffer(device, framebuffer, nullptr);
-    vkDestroyRenderPass(device, render_pass, nullptr);
-    vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
-    vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
-    vkFreeMemory(device, object_buffer_memory, nullptr);
-    vkDestroyBuffer(device, object_buffer, nullptr);
-    vkDestroySampler(device, atlas_sampler, nullptr);
-    vkDestroyImageView(device, atlas_image_view, nullptr);
-    vkDestroyCommandPool(device, command_pool, nullptr);
-    vkFreeMemory(device, atlas_image_memory, nullptr);
-    vkDestroyImage(device, atlas_image, nullptr);
+    context.wait_idle();
+    vkUnmapMemory(context.device(), object_buffer_memory);
+    vkDestroySemaphore(context.device(), rendering_finished_semaphore, nullptr);
+    vkDestroySemaphore(context.device(), image_available_semaphore, nullptr);
+    vkDestroyFence(context.device(), fence, nullptr);
+    vkDestroyPipeline(context.device(), pipeline, nullptr);
+    vkDestroyShaderModule(context.device(), fragment_shader, nullptr);
+    vkDestroyShaderModule(context.device(), vertex_shader, nullptr);
+    vkDestroyPipelineLayout(context.device(), pipeline_layout, nullptr);
+    vkDestroyFramebuffer(context.device(), framebuffer, nullptr);
+    vkDestroyRenderPass(context.device(), render_pass, nullptr);
+    vkDestroyDescriptorSetLayout(context.device(), descriptor_set_layout, nullptr);
+    vkDestroyDescriptorPool(context.device(), descriptor_pool, nullptr);
+    vkFreeMemory(context.device(), object_buffer_memory, nullptr);
+    vkDestroyBuffer(context.device(), object_buffer, nullptr);
+    vkDestroySampler(context.device(), atlas_sampler, nullptr);
+    vkDestroyImageView(context.device(), atlas_image_view, nullptr);
+    vkDestroyCommandPool(context.device(), command_pool, nullptr);
+    vkFreeMemory(context.device(), atlas_image_memory, nullptr);
+    vkDestroyImage(context.device(), atlas_image, nullptr);
     for (auto *image_view : swapchain_image_views) {
-        vkDestroyImageView(device, image_view, nullptr);
+        vkDestroyImageView(context.device(), image_view, nullptr);
     }
-    vkDestroySwapchainKHR(device, swapchain, nullptr);
-    vkDestroySurfaceKHR(instance, surface, nullptr);
-    vkDestroyDevice(device, nullptr);
-    vkDestroyInstance(instance, nullptr);
+    vkDestroySwapchainKHR(context.device(), swapchain, nullptr);
+    vkDestroySurfaceKHR(context.instance(), surface, nullptr);
 }

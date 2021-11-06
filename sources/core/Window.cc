@@ -11,12 +11,12 @@
 
 namespace v2d {
 
-std::span<const char *const> Window::required_instance_extensions() {
+Span<const char *const> Window::required_instance_extensions() {
     static const std::array s_instance_extensions{
         "VK_KHR_surface",
         "VK_KHR_xcb_surface",
     };
-    return s_instance_extensions;
+    return {s_instance_extensions.data(), s_instance_extensions.size()};
 }
 
 Window::Window(std::uint32_t width, std::uint32_t height) : m_width(width), m_height(height) {

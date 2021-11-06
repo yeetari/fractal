@@ -1,6 +1,7 @@
 #pragma once
 
 #include <v2d/maths/Vec.hh>
+#include <v2d/support/Span.hh>
 
 #include <vulkan/vulkan_core.h>
 #include <xcb/xcb.h>
@@ -22,7 +23,7 @@ class Window {
     bool m_should_close{false};
 
 public:
-    static std::span<const char *const> required_instance_extensions();
+    static Span<const char *const> required_instance_extensions();
 
     Window(std::uint32_t width, std::uint32_t height);
     Window(const Window &) = delete;

@@ -13,6 +13,41 @@ public:
     constexpr Vec() : m_elements{T{}} {}
     template <typename... Ts>
     constexpr Vec(Ts... ts) requires(sizeof...(Ts) == ElementCount) : m_elements{ts...} {}
+    constexpr Vec(T t) requires(ElementCount != 1) {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] = t;
+        }
+    }
+
+    Vec &operator+=(const Vec &rhs) {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] += rhs.m_elements[i];
+        }
+        return *this;
+    }
+    Vec &operator-=(const Vec &rhs) {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] -= rhs.m_elements[i];
+        }
+        return *this;
+    }
+    Vec &operator*=(const Vec &rhs) {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] *= rhs.m_elements[i];
+        }
+        return *this;
+    }
+    Vec &operator/=(const Vec &rhs) {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] /= rhs.m_elements[i];
+        }
+        return *this;
+    }
+
+    Vec operator+(const Vec &rhs) { return Vec(*this) += rhs; }
+    Vec operator-(const Vec &rhs) { return Vec(*this) -= rhs; }
+    Vec operator*(const Vec &rhs) { return Vec(*this) *= rhs; }
+    Vec operator/(const Vec &rhs) { return Vec(*this) /= rhs; }
 
     constexpr T x() const requires(ElementCount >= 1) { return m_elements[0]; }
     constexpr T y() const requires(ElementCount >= 2) { return m_elements[1]; }

@@ -1,23 +1,30 @@
 #version 450
 
-layout (push_constant) uniform ObjectData {
+struct ObjectData {
     vec2 scale;
+    vec2 sprite_cell;
     vec2 translation;
-} g_object;
+};
+
+layout (binding = 0) readonly buffer ObjectDatas {
+    ObjectData g_objects[];
+};
 
 layout (location = 0) out vec2 g_uv;
 
+const vec2 k_vertices[6] = vec2[6](
+    vec2(-1.0f, -1.0f),
+    vec2(1.0f, -1.0f),
+    vec2(1.0f, 1.0f),
+    vec2(-1.0f, -1.0f),
+    vec2(-1.0f, 1.0f),
+    vec2(1.0f, 1.0f)
+);
+
 void main() {
-    vec2 vertices[6] = vec2[6](
-        vec2(-1.0f, -1.0f),
-        vec2(1.0f, -1.0f),
-        vec2(1.0f, 1.0f),
-        vec2(-1.0f, -1.0f),
-        vec2(-1.0f, 1.0f),
-        vec2(1.0f, 1.0f)
-    );
-    vec2 position = vertices[gl_VertexIndex] * g_object.scale + (g_object.translation * 2.0f - 1.0f);
-    vec2 uv = (vertices[gl_VertexIndex] + 1.0f) * 0.5f;
+    ObjectData object = g_objects[gl_InstanceIndex];
+    vec2 position = k_vertices[gl_VertexIndex] * object.scale + (object.translation * 2.0f - 1.0f);
+    vec2 uv = (k_vertices[gl_VertexIndex] + 1.0f) * 0.5f;
     gl_Position = vec4(position, 0.0f, 1.0f);
-    g_uv = uv / 6.0f + vec2(1.0f / 6.0f, 0.0f);
+    g_uv = (uv + object.sprite_cell) / 6.0f;
 }

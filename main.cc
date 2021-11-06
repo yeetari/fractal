@@ -1,3 +1,4 @@
+#include "Vec.hh"
 #include "Vector.hh"
 #include "Window.hh"
 
@@ -25,6 +26,12 @@
      static_cast<std::uint32_t>(patch))
 
 namespace {
+
+struct ObjectData {
+    Vec2f scale;
+    Vec2f sprite_cell;
+    Vec2f translation;
+};
 
 VkShaderModule load_shader(VkDevice device, const char *path) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
@@ -348,30 +355,62 @@ int main() {
     VkSampler atlas_sampler = nullptr;
     VK_CHECK(vkCreateSampler(device, &atlas_sampler_ci, nullptr, &atlas_sampler), "Failed to create atlas sampler")
 
-    VkDescriptorPoolSize descriptor_pool_size{
-        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
+    VkBufferCreateInfo object_buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(ObjectData) * 5,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer object_buffer = nullptr;
+    VK_CHECK(vkCreateBuffer(device, &object_buffer_ci, nullptr, &object_buffer), "Failed to create object buffer")
+
+    VkMemoryRequirements object_buffer_requirements;
+    vkGetBufferMemoryRequirements(device, object_buffer, &object_buffer_requirements);
+    VkDeviceMemory object_buffer_memory = allocate_memory(
+        object_buffer_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VK_CHECK(vkBindBufferMemory(device, object_buffer, object_buffer_memory, 0), "Failed to object buffer memory")
+
+    std::array descriptor_pool_sizes{
+        VkDescriptorPoolSize{
+            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+        },
+        VkDescriptorPoolSize{
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+        },
     };
     VkDescriptorPoolCreateInfo descriptor_pool_ci{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = 1,
-        .poolSizeCount = 1,
-        .pPoolSizes = &descriptor_pool_size,
+        .poolSizeCount = static_cast<std::uint32_t>(descriptor_pool_sizes.size()),
+        .pPoolSizes = descriptor_pool_sizes.data(),
     };
     VkDescriptorPool descriptor_pool = nullptr;
     VK_CHECK(vkCreateDescriptorPool(device, &descriptor_pool_ci, nullptr, &descriptor_pool),
              "Failed to create descriptor pool")
 
-    VkDescriptorSetLayoutBinding atlas_binding{
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    std::array descriptor_bindings{
+        // Atlas binding.
+        VkDescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        // Object buffer binding.
+        VkDescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        },
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &atlas_binding,
+        .bindingCount = static_cast<std::uint32_t>(descriptor_bindings.size()),
+        .pBindings = descriptor_bindings.data(),
     };
     VkDescriptorSetLayout descriptor_set_layout = nullptr;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_ci, nullptr, &descriptor_set_layout),
@@ -391,14 +430,30 @@ int main() {
         .imageView = atlas_image_view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
-    VkWriteDescriptorSet descriptor_write{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = descriptor_set,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &atlas_image_info,
+    VkDescriptorBufferInfo object_buffer_info{
+        .buffer = object_buffer,
+        .range = VK_WHOLE_SIZE,
     };
-    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, nullptr);
+    std::array descriptor_writes{
+        VkWriteDescriptorSet{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &atlas_image_info,
+        },
+        VkWriteDescriptorSet{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &object_buffer_info,
+        },
+    };
+    vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0,
+                           nullptr);
 
     VkAttachmentDescription attachment{
         .format = surface_format.format,
@@ -456,16 +511,10 @@ int main() {
     VkFramebuffer framebuffer = nullptr;
     VK_CHECK(vkCreateFramebuffer(device, &framebuffer_ci, nullptr, &framebuffer), "Failed to create framebuffer")
 
-    VkPushConstantRange push_constant_range{
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .size = sizeof(float) * 4,
-    };
     VkPipelineLayoutCreateInfo pipeline_layout_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &push_constant_range,
     };
     VkPipelineLayout pipeline_layout = nullptr;
     VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_ci, nullptr, &pipeline_layout),
@@ -511,6 +560,13 @@ int main() {
 
     VkPipelineColorBlendAttachmentState blend_attachment{
         // NOLINTNEXTLINE
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
                           VK_COLOR_COMPONENT_A_BIT, // NOLINT
     };
@@ -570,6 +626,9 @@ int main() {
     VK_CHECK(vkCreateSemaphore(device, &semaphore_ci, nullptr, &rendering_finished_semaphore),
              "Failed to create semaphore")
 
+    ObjectData *object_data;
+    vkMapMemory(device, object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
+
     float count = 0.0f;
     float previous_time = 0.0f;
     while (!window.should_close()) {
@@ -612,14 +671,20 @@ int main() {
         double xpos;
         double ypos;
         glfwGetCursorPos(*window, &xpos, &ypos);
-        std::array<float, 4> transform{std::sin(count), std::cos(count), static_cast<float>(xpos) / 800.0f,
-                                       static_cast<float>(ypos) / 600.0f};
         float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
-        transform[0] = scale / 800.0f;
-        transform[1] = scale / 600.0f;
-        vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float) * 4,
-                           transform.data());
-        vkCmdDraw(command_buffer, 6, 1, 0, 0);
+        object_data[0].scale = {scale / 800.0f, scale / 600.0f};
+        object_data[0].sprite_cell = {0.0f, 0.0f};
+        object_data[0].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
+        scale = 42.0f * std::abs(std::cos(count)) * 8.0f;
+        xpos += 200.0f;
+        object_data[1].scale = {scale / 800.0f, scale / 600.0f};
+        object_data[1].sprite_cell = {1.0f, 0.0f};
+        object_data[1].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
+        xpos -= 400.0f;
+        object_data[2].scale = {scale / 800.0f, scale / 600.0f};
+        object_data[2].sprite_cell = {1.0f, 0.0f};
+        object_data[2].translation = {static_cast<float>(xpos) / 800.0f, static_cast<float>(ypos) / 600.0f};
+        vkCmdDraw(command_buffer, 6, 3, 0, 0);
         vkCmdEndRenderPass(command_buffer);
         vkEndCommandBuffer(command_buffer);
 
@@ -649,6 +714,7 @@ int main() {
         count += dt;
     }
     vkDeviceWaitIdle(device);
+    vkUnmapMemory(device, object_buffer_memory);
     vkDestroySemaphore(device, rendering_finished_semaphore, nullptr);
     vkDestroySemaphore(device, image_available_semaphore, nullptr);
     vkDestroyFence(device, fence, nullptr);
@@ -660,6 +726,8 @@ int main() {
     vkDestroyRenderPass(device, render_pass, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+    vkFreeMemory(device, object_buffer_memory, nullptr);
+    vkDestroyBuffer(device, object_buffer, nullptr);
     vkDestroySampler(device, atlas_sampler, nullptr);
     vkDestroyImageView(device, atlas_image_view, nullptr);
     vkDestroyCommandPool(device, command_pool, nullptr);

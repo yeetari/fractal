@@ -1,10 +1,10 @@
-#include "Vec.hh"
-#include "Vector.hh"
-#include "Window.hh"
+#include <v2d/core/Window.hh>
+#include <v2d/maths/Vec.hh>
+#include <v2d/support/Vector.hh>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "third-party/stb_image.h"
 #include <GLFW/glfw3.h>
+#include <stb_image.h>
 #include <vulkan/vulkan_core.h>
 
 #include <cmath>
@@ -28,15 +28,15 @@
 namespace {
 
 struct ObjectData {
-    Vec2f scale;
-    Vec2f sprite_cell;
-    Vec2f translation;
+    v2d::Vec2f scale;
+    v2d::Vec2f sprite_cell;
+    v2d::Vec2f translation;
 };
 
 VkShaderModule load_shader(VkDevice device, const char *path) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
     assert(file);
-    Vector<char> binary(file.tellg());
+    v2d::Vector<char> binary(file.tellg());
     file.seekg(0);
     file.read(binary.data(), binary.size());
     VkShaderModuleCreateInfo module_ci{
@@ -52,14 +52,14 @@ VkShaderModule load_shader(VkDevice device, const char *path) {
 } // namespace
 
 int main() {
-    Window window(800, 600, false);
+    v2d::Window window(800, 600, false);
     VkApplicationInfo application_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "v2d",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
         .apiVersion = VK_MAKE_VERSION(1, 2, 0),
     };
-    const auto required_extensions = Window::required_instance_extensions();
+    const auto required_extensions = v2d::Window::required_instance_extensions();
     VkInstanceCreateInfo instance_ci{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &application_info,
@@ -82,10 +82,10 @@ int main() {
 
     std::uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
-    Vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+    v2d::Vector<VkQueueFamilyProperties> queue_families(queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
 
-    Vector<VkDeviceQueueCreateInfo> queue_cis;
+    v2d::Vector<VkDeviceQueueCreateInfo> queue_cis;
     const float queue_priority = 1.0f;
     for (std::uint32_t i = 0; i < queue_families.size(); i++) {
         queue_cis.push({
@@ -153,8 +153,8 @@ int main() {
 
     std::uint32_t swapchain_image_count = 0;
     vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr);
-    Vector<VkImage> swapchain_images(swapchain_image_count);
-    Vector<VkImageView> swapchain_image_views(swapchain_image_count);
+    v2d::Vector<VkImage> swapchain_images(swapchain_image_count);
+    v2d::Vector<VkImageView> swapchain_image_views(swapchain_image_count);
     vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_images.data());
     for (std::uint32_t i = 0; i < swapchain_image_count; i++) {
         VkImageViewCreateInfo image_view_ci{
@@ -180,7 +180,7 @@ int main() {
 
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
-    Vector<VkMemoryType> memory_types;
+    v2d::Vector<VkMemoryType> memory_types;
     for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
         memory_types.push(memory_properties.memoryTypes[i]);
     }
@@ -209,7 +209,7 @@ int main() {
 
     std::uint32_t atlas_width;
     std::uint32_t atlas_height;
-    auto *atlas_texture = stbi_load("../atlas.png", reinterpret_cast<int *>(&atlas_width),
+    auto *atlas_texture = stbi_load("atlas.png", reinterpret_cast<int *>(&atlas_width),
                                     reinterpret_cast<int *>(&atlas_height), nullptr, STBI_rgb_alpha);
     assert(atlas_texture != nullptr);
 
@@ -576,8 +576,8 @@ int main() {
         .pAttachments = &blend_attachment,
     };
 
-    auto *vertex_shader = load_shader(device, "main.vert.spv");
-    auto *fragment_shader = load_shader(device, "main.frag.spv");
+    auto *vertex_shader = load_shader(device, "shaders/main.vert.spv");
+    auto *fragment_shader = load_shader(device, "shaders/main.frag.spv");
     std::array shader_stage_cis{
         VkPipelineShaderStageCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -710,7 +710,7 @@ int main() {
             .pImageIndices = &image_index,
         };
         vkQueuePresentKHR(present_queue, &present_info);
-        Window::poll_events();
+        v2d::Window::poll_events();
         count += dt;
     }
     vkDeviceWaitIdle(device);

@@ -1,9 +1,11 @@
-#include "Window.hh"
+#include <v2d/core/Window.hh>
 
 #include <GLFW/glfw3.h>
 
 #include <cstdio>
 #include <cstdlib>
+
+namespace v2d {
 
 void Window::poll_events() {
     glfwPollEvents();
@@ -42,3 +44,5 @@ void Window::close() const {
 bool Window::should_close() const {
     return glfwWindowShouldClose(m_window) == GLFW_TRUE;
 }
+
+} // namespace v2d

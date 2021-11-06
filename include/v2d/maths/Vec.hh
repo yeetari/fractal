@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+namespace v2d {
+
 template <typename T, unsigned ElementCount>
 class Vec {
     std::array<T, ElementCount> m_elements;
@@ -20,3 +22,5 @@ public:
 
 using Vec2f = Vec<float, 2>;
 using Vec2u = Vec<std::uint32_t, 2>;
+
+} // namespace v2d

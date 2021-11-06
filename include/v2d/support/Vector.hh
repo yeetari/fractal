@@ -7,6 +7,8 @@
 #include <cstring>
 #include <utility>
 
+namespace v2d {
+
 template <typename T, typename SizeType = std::uint32_t>
 class Vector {
     T *m_data{nullptr};
@@ -183,3 +185,5 @@ const T &Vector<T, SizeType>::operator[](SizeType index) const {
     assert(index < m_size);
     return begin()[index];
 }
+
+} // namespace v2d

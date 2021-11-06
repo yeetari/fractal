@@ -5,6 +5,8 @@
 
 struct GLFWwindow;
 
+namespace v2d {
+
 class Window {
     const std::uint32_t m_width;
     const std::uint32_t m_height;
@@ -29,3 +31,5 @@ public:
     std::uint32_t width() const { return m_width; }
     std::uint32_t height() const { return m_height; }
 };
+
+} // namespace v2d

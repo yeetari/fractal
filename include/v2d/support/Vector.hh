@@ -40,6 +40,7 @@ public:
     T &emplace(Args &&...args);
     void push(const T &elem);
     void push(T &&elem);
+    void pop();
 
     Span<T> span() { return {m_data, m_size}; }
     Span<const T> span() const { return {m_data, m_size}; }
@@ -51,6 +52,11 @@ public:
 
     T &operator[](SizeType index);
     const T &operator[](SizeType index) const;
+
+    T &first() { return begin()[0]; }
+    const T &first() const { return begin()[0]; }
+    T &last() { return begin()[m_size - 1]; }
+    const T &last() const { return begin()[m_size - 1]; }
 
     bool empty() const { return m_size == 0; }
     T *data() const { return m_data; }
@@ -177,6 +183,13 @@ void Vector<T, SizeType>::push(T &&elem) {
     ensure_capacity(m_size + 1);
     new (end()) T(std::move(elem));
     m_size++;
+}
+
+template <typename T, typename SizeType>
+void Vector<T, SizeType>::pop() {
+    V2D_ASSERT(!empty());
+    m_size--;
+    end()->~T();
 }
 
 template <typename T, typename SizeType>

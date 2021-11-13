@@ -2,8 +2,8 @@
 
 #include <v2d/support/SparseSet.hh>
 #include <v2d/support/TypeErased.hh>
-#include <v2d/support/Vector.hh>
 
+#include <array>
 #include <cstddef>
 #include <utility>
 
@@ -91,7 +91,7 @@ class EntityManager {
     friend class EntitySingleView;
 
 private:
-    Vector<TypeErased<SparseSet, EntityId>> m_component_sets;
+    std::array<TypeErased<SparseSet, EntityId>, 16> m_component_sets;
     EntityId m_count{0};
     EntityId m_next_id{0};
 
@@ -106,8 +106,6 @@ private:
     };
 
 public:
-    EntityManager() { m_component_sets.grow(16); }
-
     template <typename C, typename... Args>
     void add_component(EntityId id, Args &&...args);
     template <typename C>

@@ -33,7 +33,7 @@ public:
     Window &operator=(const Window &) = delete;
     Window &operator=(Window &&) = delete;
 
-    VkSurfaceKHR create_surface(VkInstance instance);
+    VkSurfaceKHR create_surface(VkInstance instance) const;
 
     void close();
     void poll_events();

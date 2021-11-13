@@ -1,5 +1,6 @@
 #include <v2d/core/Context.hh>
 #include <v2d/core/Window.hh>
+#include <v2d/gfx/Swapchain.hh>
 #include <v2d/maths/Vec.hh>
 #include <v2d/support/Assert.hh>
 #include <v2d/support/Vector.hh>
@@ -50,71 +51,9 @@ VkShaderModule load_shader(VkDevice device, const char *path) {
 } // namespace
 
 int main() {
-    v2d::Window window(800, 600);
     v2d::Context context(v2d::Window::required_instance_extensions());
-    VkSurfaceKHR surface = window.create_surface(context.instance());
-    VkSurfaceCapabilitiesKHR surface_capabilities{};
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context.physical_device(), surface, &surface_capabilities),
-             "Failed to get surface capabilities")
-
-    VkQueue present_queue = nullptr;
-    for (std::uint32_t i = 0; i < context.queue_families().size(); i++) {
-        VkBool32 present_supported = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(context.physical_device(), i, surface, &present_supported);
-        if (present_supported == VK_TRUE) {
-            vkGetDeviceQueue(context.device(), i, 0, &present_queue);
-            break;
-        }
-    }
-
-    VkSurfaceFormatKHR surface_format{
-        .format = VK_FORMAT_B8G8R8A8_SRGB,
-        .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-    };
-    VkSwapchainCreateInfoKHR swapchain_ci{
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = surface,
-        .minImageCount = surface_capabilities.minImageCount + 1,
-        .imageFormat = surface_format.format,
-        .imageColorSpace = surface_format.colorSpace,
-        .imageExtent = {window.width(), window.height()},
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = surface_capabilities.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE,
-    };
-    VkSwapchainKHR swapchain = nullptr;
-    VK_CHECK(vkCreateSwapchainKHR(context.device(), &swapchain_ci, nullptr, &swapchain), "Failed to create swapchain")
-
-    std::uint32_t swapchain_image_count = 0;
-    vkGetSwapchainImagesKHR(context.device(), swapchain, &swapchain_image_count, nullptr);
-    v2d::Vector<VkImage> swapchain_images(swapchain_image_count);
-    v2d::Vector<VkImageView> swapchain_image_views(swapchain_image_count);
-    vkGetSwapchainImagesKHR(context.device(), swapchain, &swapchain_image_count, swapchain_images.data());
-    for (std::uint32_t i = 0; i < swapchain_image_count; i++) {
-        VkImageViewCreateInfo image_view_ci{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = swapchain_images[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surface_format.format,
-            .components{
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-            },
-            .subresourceRange{
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .levelCount = 1,
-                .layerCount = 1,
-            },
-        };
-        VK_CHECK(vkCreateImageView(context.device(), &image_view_ci, nullptr, &swapchain_image_views[i]),
-                 "Failed to create swapchain image view")
-    }
+    v2d::Window window(800, 600);
+    v2d::Swapchain swapchain(context, window);
 
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &memory_properties);
@@ -400,7 +339,7 @@ int main() {
                            descriptor_writes.data(), 0, nullptr);
 
     VkAttachmentDescription attachment{
-        .format = surface_format.format,
+        .format = swapchain.surface_format(),
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -581,9 +520,7 @@ int main() {
         auto current_time = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float, std::chrono::seconds::period>(current_time - previous_time).count();
         previous_time = current_time;
-        std::uint32_t image_index = 0;
-        vkAcquireNextImageKHR(context.device(), swapchain, std::numeric_limits<std::uint64_t>::max(),
-                              image_available_semaphore, nullptr, &image_index);
+        std::uint32_t image_index = swapchain.acquire_next_image(image_available_semaphore);
         // TODO: Record command buffer here, before waiting for fence, instead?
         vkWaitForFences(context.device(), 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
         vkResetFences(context.device(), 1, &fence);
@@ -599,7 +536,7 @@ int main() {
         VkRenderPassAttachmentBeginInfo attachment_bi{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO,
             .attachmentCount = 1,
-            .pAttachments = &swapchain_image_views[image_index],
+            .pAttachments = &swapchain.image_view(image_index),
         };
         VkRenderPassBeginInfo render_pass_bi{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -642,15 +579,8 @@ int main() {
         };
         vkQueueSubmit(queue, 1, &submit_info, fence);
 
-        VkPresentInfoKHR present_info{
-            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &rendering_finished_semaphore,
-            .swapchainCount = 1,
-            .pSwapchains = &swapchain,
-            .pImageIndices = &image_index,
-        };
-        vkQueuePresentKHR(present_queue, &present_info);
+        std::array wait_semaphores{rendering_finished_semaphore};
+        swapchain.present(image_index, {wait_semaphores.data(), wait_semaphores.size()});
         window.poll_events();
         count += dt;
     }
@@ -674,9 +604,4 @@ int main() {
     vkDestroyCommandPool(context.device(), command_pool, nullptr);
     vkFreeMemory(context.device(), atlas_image_memory, nullptr);
     vkDestroyImage(context.device(), atlas_image, nullptr);
-    for (auto *image_view : swapchain_image_views) {
-        vkDestroyImageView(context.device(), image_view, nullptr);
-    }
-    vkDestroySwapchainKHR(context.device(), swapchain, nullptr);
-    vkDestroySurfaceKHR(context.instance(), surface, nullptr);
 }

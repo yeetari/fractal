@@ -52,7 +52,7 @@ Window::~Window() {
     xcb_disconnect(m_connection);
 }
 
-VkSurfaceKHR Window::create_surface(VkInstance instance) {
+VkSurfaceKHR Window::create_surface(VkInstance instance) const {
     VkXcbSurfaceCreateInfoKHR surface_ci{
         .sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
         .connection = m_connection,

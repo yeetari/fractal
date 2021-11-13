@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <utility>
 
+#define V2D_DECLARE_COMPONENT(name) static constexpr std::size_t component_id = static_cast<std::size_t>(name)
+
 namespace v2d {
 
 class EntityManager;
@@ -96,16 +98,6 @@ private:
     EntityId m_count{0};
     EntityId m_next_id{0};
 
-    static std::size_t s_component_family_counter; // NOLINT
-
-    template <typename>
-    struct ComponentFamily {
-        static std::size_t family() {
-            static std::size_t family = s_component_family_counter++;
-            return family;
-        }
-    };
-
 public:
     template <typename C, typename... Args>
     void add_component(EntityId id, Args &&...args);
@@ -181,7 +173,7 @@ std::tuple<Entity, Comps *...> EntityIterator<Comps...>::operator*() const {
 template <typename C>
 EntitySingleView<C>::EntitySingleView(EntityManager *manager)
     : m_manager(manager),
-      m_component_set(manager->m_component_sets[EntityManager::ComponentFamily<C>::family()].template as<C>()) {}
+      m_component_set(manager->m_component_sets[C::component_id].template as<C>()) {}
 
 template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::begin() const {
@@ -205,22 +197,22 @@ EntityIterator<Comps...> EntityView<Comps...>::end() const {
 
 template <typename C, typename... Args>
 void EntityManager::add_component(EntityId id, Args &&...args) {
-    m_component_sets[ComponentFamily<C>::family()].template as<C>().insert(id, std::forward<Args>(args)...);
+    m_component_sets[C::component_id].template as<C>().insert(id, std::forward<Args>(args)...);
 }
 
 template <typename C>
 C &EntityManager::get_component(EntityId id) {
-    return m_component_sets[ComponentFamily<C>::family()].template as<C>()[id];
+    return m_component_sets[C::component_id].template as<C>()[id];
 }
 
 template <typename C>
 bool EntityManager::has_component(EntityId id) {
-    return m_component_sets[ComponentFamily<C>::family()].template as<C>().contains(id);
+    return m_component_sets[C::component_id].template as<C>().contains(id);
 }
 
 template <typename C>
 void EntityManager::remove_component(EntityId id) {
-    m_component_sets[ComponentFamily<C>::family()].template as<C>().remove(id);
+    m_component_sets[C::component_id].template as<C>().remove(id);
 }
 
 template <typename C>

@@ -7,13 +7,22 @@ namespace {
 
 constexpr float k_delta_time = 1.0f / 60.0f;
 
+enum class ComponentId {
+    Position = 0,
+    Velocity = 1,
+};
+
 struct Position {
+    V2D_DECLARE_COMPONENT(ComponentId::Position);
+
     float x;
     float y;
     Position(float x, float y) : x(x), y(y) {}
 };
 
 struct Velocity {
+    V2D_DECLARE_COMPONENT(ComponentId::Velocity);
+
     float x;
     float y;
     Velocity(float x, float y) : x(x), y(y) {}

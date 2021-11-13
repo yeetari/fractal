@@ -2,8 +2,6 @@
 
 namespace v2d {
 
-std::size_t EntityManager::s_component_family_counter = 0;
-
 void Entity::destroy() {
     m_manager->destroy_entity(m_id);
 }

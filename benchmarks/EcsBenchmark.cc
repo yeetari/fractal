@@ -1,3 +1,4 @@
+#include <v2d/ecs/Component.hh>
 #include <v2d/ecs/World.hh>
 
 #include <benchmark/benchmark.h>

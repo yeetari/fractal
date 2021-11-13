@@ -26,7 +26,7 @@ Context::Context(Span<const char *const> extensions) {
     VkInstanceCreateInfo instance_ci{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &application_info,
-        .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+        .enabledExtensionCount = extensions.size(),
         .ppEnabledExtensionNames = extensions.data(),
     };
 #ifndef NDEBUG

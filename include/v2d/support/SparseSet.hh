@@ -18,6 +18,9 @@ public:
     void insert(I index, Args &&...args);
     void remove(I index);
 
+    auto begin() { return m_dense.begin(); }
+    auto end() { return m_dense.end(); };
+
     E &operator[](I index);
     const E &operator[](I index) const;
 

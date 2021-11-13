@@ -1,5 +1,9 @@
 #include <v2d/core/Context.hh>
+#include <v2d/core/Transform.hh>
 #include <v2d/core/Window.hh>
+#include <v2d/ecs/World.hh>
+#include <v2d/gfx/RenderSystem.hh>
+#include <v2d/gfx/Sprite.hh>
 #include <v2d/gfx/Swapchain.hh>
 #include <v2d/maths/Vec.hh>
 #include <v2d/support/Assert.hh>
@@ -25,12 +29,6 @@
     }
 
 namespace {
-
-struct ObjectData {
-    v2d::Vec2f scale;
-    v2d::Vec2f sprite_cell;
-    v2d::Vec2f translation;
-};
 
 VkShaderModule load_shader(VkDevice device, const char *path) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
@@ -237,7 +235,7 @@ int main() {
 
     VkBufferCreateInfo object_buffer_ci{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(ObjectData) * 5,
+        .size = sizeof(v2d::ObjectData) * 5,
         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
@@ -511,8 +509,20 @@ int main() {
     VK_CHECK(vkCreateSemaphore(context.device(), &semaphore_ci, nullptr, &rendering_finished_semaphore),
              "Failed to create semaphore")
 
-    ObjectData *object_data;
+    v2d::ObjectData *object_data;
     vkMapMemory(context.device(), object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
+
+    v2d::World world;
+    world.add<v2d::RenderSystem>(object_data);
+    for (std::size_t i = 0; i < 3; i++) {
+        auto entity = world.create_entity();
+        entity.add<v2d::Transform>(v2d::Vec2f(0.0f));
+        if (i == 0) {
+            entity.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
+        } else {
+            entity.add<v2d::Sprite>(v2d::Vec2u(1u, 0u));
+        }
+    }
 
     float count = 0.0f;
     std::chrono::time_point<std::chrono::steady_clock> previous_time;
@@ -551,17 +561,12 @@ int main() {
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set,
                                 0, nullptr);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
-        object_data[0].scale = {scale / 800.0f, scale / 600.0f};
-        object_data[0].sprite_cell = {0.0f, 0.0f};
-        object_data[0].translation = window.mouse_position() / window.resolution();
-        scale = 42.0f * std::abs(std::cos(count)) * 8.0f;
-        object_data[1].scale = {scale / 800.0f, scale / 600.0f};
-        object_data[1].sprite_cell = {1.0f, 0.0f};
-        object_data[1].translation = (window.mouse_position() - v2d::Vec2f(200.0f, 0.0f)) / window.resolution();
-        object_data[2].scale = {scale / 800.0f, scale / 600.0f};
-        object_data[2].sprite_cell = {1.0f, 0.0f};
-        object_data[2].translation = (window.mouse_position() + v2d::Vec2f(200.0f, 0.0f)) / window.resolution();
+        for (float translation = 0.0f; auto [entity, transform] : world.view<v2d::Transform>()) {
+            const float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
+            transform->set_position((window.mouse_position() + v2d::Vec2f(translation, 0.0f)) / window.resolution());
+            transform->set_scale(v2d::Vec2f(scale) / window.resolution());
+            translation += 200.0f;
+        }
         vkCmdDraw(command_buffer, 6, 3, 0, 0);
         vkCmdEndRenderPass(command_buffer);
         vkEndCommandBuffer(command_buffer);
@@ -582,6 +587,7 @@ int main() {
         std::array wait_semaphores{rendering_finished_semaphore};
         swapchain.present(image_index, {wait_semaphores.data(), wait_semaphores.size()});
         window.poll_events();
+        world.update(dt);
         count += dt;
     }
     context.wait_idle();

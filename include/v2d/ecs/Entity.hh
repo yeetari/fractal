@@ -67,9 +67,10 @@ public:
 template <typename C>
 class EntitySingleView {
     EntityManager *const m_manager;
+    SparseSet<C, EntityId> &m_component_set;
 
 public:
-    EntitySingleView(EntityManager *manager) : m_manager(manager) {}
+    EntitySingleView(EntityManager *manager);
 
     EntitySingleIterator<C> begin() const;
     EntitySingleIterator<C> end() const;
@@ -178,14 +179,18 @@ std::tuple<Entity, Comps *...> EntityIterator<Comps...>::operator*() const {
 }
 
 template <typename C>
+EntitySingleView<C>::EntitySingleView(EntityManager *manager)
+    : m_manager(manager),
+      m_component_set(manager->m_component_sets[EntityManager::ComponentFamily<C>::family()].template as<C>()) {}
+
+template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::begin() const {
-    return {m_manager,
-            m_manager->m_component_sets[EntityManager::ComponentFamily<C>::family()].template as<C>().begin()};
+    return {m_manager, m_component_set.begin()};
 }
 
 template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::end() const {
-    return {m_manager, m_manager->m_component_sets[EntityManager::ComponentFamily<C>::family()].template as<C>().end()};
+    return {m_manager, m_component_set.end()};
 }
 
 template <typename... Comps>

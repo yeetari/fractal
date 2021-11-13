@@ -53,7 +53,7 @@ Context::Context(Span<const char *const> extensions) {
 
     std::uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queue_family_count, nullptr);
-    m_queue_families.grow(queue_family_count);
+    m_queue_families.ensure_size(queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queue_family_count, m_queue_families.data());
 
     Vector<VkDeviceQueueCreateInfo> queue_cis;

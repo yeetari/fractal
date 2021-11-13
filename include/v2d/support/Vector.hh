@@ -33,7 +33,7 @@ public:
     void clear();
     void ensure_capacity(SizeType capacity);
     template <typename... Args>
-    void grow(SizeType size, Args &&...args);
+    void ensure_size(SizeType size, Args &&...args);
     void reallocate(SizeType capacity);
 
     template <typename... Args>
@@ -71,7 +71,7 @@ using LargeVector = Vector<T, std::size_t>;
 template <typename T, typename SizeType>
 template <typename... Args>
 Vector<T, SizeType>::Vector(SizeType size, Args &&...args) {
-    grow(size, std::forward<Args>(args)...);
+    ensure_size(size, std::forward<Args>(args)...);
 }
 
 template <typename T, typename SizeType>
@@ -123,7 +123,7 @@ void Vector<T, SizeType>::ensure_capacity(SizeType capacity) {
 
 template <typename T, typename SizeType>
 template <typename... Args>
-void Vector<T, SizeType>::grow(SizeType size, Args &&...args) {
+void Vector<T, SizeType>::ensure_size(SizeType size, Args &&...args) {
     if (size <= m_size) {
         return;
     }

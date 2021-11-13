@@ -37,7 +37,7 @@ template <typename E, typename I>
 template <typename... Args>
 void SparseSet<E, I>::insert(I index, Args &&...args) {
     V2D_ASSERT(index >= m_sparse.size() || !contains(index));
-    m_sparse.grow(index + 1);
+    m_sparse.ensure_size(index + 1);
     m_sparse[index] = m_dense.size();
     m_dense.emplace(std::piecewise_construct, std::forward_as_tuple(index),
                     std::forward_as_tuple(std::forward<Args>(args)...));

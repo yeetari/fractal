@@ -23,11 +23,6 @@
         std::exit(1);                                                                                                  \
     }
 
-#undef VK_MAKE_VERSION
-#define VK_MAKE_VERSION(major, minor, patch)                                                                           \
-    ((static_cast<std::uint32_t>(major) << 22u) | (static_cast<std::uint32_t>(minor) << 12u) |                         \
-     static_cast<std::uint32_t>(patch))
-
 namespace {
 
 struct ObjectData {
@@ -199,7 +194,8 @@ int main() {
     VkMemoryRequirements atlas_image_requirements;
     vkGetImageMemoryRequirements(context.device(), atlas_image, &atlas_image_requirements);
     VkDeviceMemory atlas_image_memory = allocate_memory(atlas_image_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VK_CHECK(vkBindImageMemory(context.device(), atlas_image, atlas_image_memory, 0), "Failed to bind atlas image memory")
+    VK_CHECK(vkBindImageMemory(context.device(), atlas_image, atlas_image_memory, 0),
+             "Failed to bind atlas image memory")
 
     VkCommandPool command_pool = nullptr;
     VkQueue queue = nullptr;
@@ -224,7 +220,8 @@ int main() {
         .commandBufferCount = 1,
     };
     VkCommandBuffer command_buffer = nullptr;
-    VK_CHECK(vkAllocateCommandBuffers(context.device(), &command_buffer_ai, &command_buffer), "Failed to allocate command buffer")
+    VK_CHECK(vkAllocateCommandBuffers(context.device(), &command_buffer_ai, &command_buffer),
+             "Failed to allocate command buffer")
 
     VkImageMemoryBarrier atlas_transition_barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -296,7 +293,8 @@ int main() {
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     };
     VkSampler atlas_sampler = nullptr;
-    VK_CHECK(vkCreateSampler(context.device(), &atlas_sampler_ci, nullptr, &atlas_sampler), "Failed to create atlas sampler")
+    VK_CHECK(vkCreateSampler(context.device(), &atlas_sampler_ci, nullptr, &atlas_sampler),
+             "Failed to create atlas sampler")
 
     VkBufferCreateInfo object_buffer_ci{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -305,14 +303,16 @@ int main() {
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
     VkBuffer object_buffer = nullptr;
-    VK_CHECK(vkCreateBuffer(context.device(), &object_buffer_ci, nullptr, &object_buffer), "Failed to create object buffer")
+    VK_CHECK(vkCreateBuffer(context.device(), &object_buffer_ci, nullptr, &object_buffer),
+             "Failed to create object buffer")
 
     VkMemoryRequirements object_buffer_requirements;
     vkGetBufferMemoryRequirements(context.device(), object_buffer, &object_buffer_requirements);
     VkDeviceMemory object_buffer_memory = allocate_memory(
         object_buffer_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkBindBufferMemory(context.device(), object_buffer, object_buffer_memory, 0), "Failed to object buffer memory")
+    VK_CHECK(vkBindBufferMemory(context.device(), object_buffer, object_buffer_memory, 0),
+             "Failed to object buffer memory")
 
     std::array descriptor_pool_sizes{
         VkDescriptorPoolSize{
@@ -366,7 +366,8 @@ int main() {
         .pSetLayouts = &descriptor_set_layout,
     };
     VkDescriptorSet descriptor_set = nullptr;
-    VK_CHECK(vkAllocateDescriptorSets(context.device(), &descriptor_set_ai, &descriptor_set), "Failed to allocate descriptor set")
+    VK_CHECK(vkAllocateDescriptorSets(context.device(), &descriptor_set_ai, &descriptor_set),
+             "Failed to allocate descriptor set")
 
     VkDescriptorImageInfo atlas_image_info{
         .sampler = atlas_sampler,
@@ -395,8 +396,8 @@ int main() {
             .pBufferInfo = &object_buffer_info,
         },
     };
-    vkUpdateDescriptorSets(context.device(), static_cast<std::uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0,
-                           nullptr);
+    vkUpdateDescriptorSets(context.device(), static_cast<std::uint32_t>(descriptor_writes.size()),
+                           descriptor_writes.data(), 0, nullptr);
 
     VkAttachmentDescription attachment{
         .format = surface_format.format,
@@ -425,7 +426,8 @@ int main() {
         .pSubpasses = &subpass,
     };
     VkRenderPass render_pass = nullptr;
-    VK_CHECK(vkCreateRenderPass(context.device(), &render_pass_ci, nullptr, &render_pass), "Failed to create render pass")
+    VK_CHECK(vkCreateRenderPass(context.device(), &render_pass_ci, nullptr, &render_pass),
+             "Failed to create render pass")
 
     VkFramebufferAttachmentImageInfo attachment_info{
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
@@ -452,7 +454,8 @@ int main() {
         .layers = 1,
     };
     VkFramebuffer framebuffer = nullptr;
-    VK_CHECK(vkCreateFramebuffer(context.device(), &framebuffer_ci, nullptr, &framebuffer), "Failed to create framebuffer")
+    VK_CHECK(vkCreateFramebuffer(context.device(), &framebuffer_ci, nullptr, &framebuffer),
+             "Failed to create framebuffer")
 
     VkPipelineLayoutCreateInfo pipeline_layout_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -579,8 +582,8 @@ int main() {
         float dt = std::chrono::duration<float, std::chrono::seconds::period>(current_time - previous_time).count();
         previous_time = current_time;
         std::uint32_t image_index = 0;
-        vkAcquireNextImageKHR(context.device(), swapchain, std::numeric_limits<std::uint64_t>::max(), image_available_semaphore,
-                              nullptr, &image_index);
+        vkAcquireNextImageKHR(context.device(), swapchain, std::numeric_limits<std::uint64_t>::max(),
+                              image_available_semaphore, nullptr, &image_index);
         // TODO: Record command buffer here, before waiting for fence, instead?
         vkWaitForFences(context.device(), 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
         vkResetFences(context.device(), 1, &fence);

@@ -170,8 +170,7 @@ std::tuple<Entity, Comps *...> EntityIterator<Comps...>::operator*() const {
 
 template <typename C>
 EntitySingleView<C>::EntitySingleView(EntityManager *manager)
-    : m_manager(manager),
-      m_component_set(manager->m_component_sets[C::component_id].template as<C>()) {}
+    : m_manager(manager), m_component_set(manager->m_component_sets[C::component_id].template as<C>()) {}
 
 template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::begin() const {

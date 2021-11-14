@@ -1,22 +1,22 @@
 #include <v2d/core/Window.hh>
 
+#include <v2d/support/Array.hh>
 #include <v2d/support/Assert.hh>
 
 #include <vulkan/vulkan_xcb.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xproto.h>
 
-#include <array>
 #include <cstdlib>
 
 namespace v2d {
 
 Span<const char *const> Window::required_instance_extensions() {
-    static const std::array s_instance_extensions{
+    static const Array s_instance_extensions{
         "VK_KHR_surface",
         "VK_KHR_xcb_surface",
     };
-    return {s_instance_extensions.data(), s_instance_extensions.size()};
+    return s_instance_extensions.span();
 }
 
 Window::Window(std::uint32_t width, std::uint32_t height) : m_width(width), m_height(height) {

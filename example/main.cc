@@ -7,6 +7,7 @@
 #include <v2d/gfx/Swapchain.hh>
 #include <v2d/maths/Vec.hh>
 #include <v2d/support/Assert.hh>
+#include <v2d/support/Optional.hh>
 #include <v2d/support/Vector.hh>
 
 #define STBI_ASSERT(x) V2D_ASSERT(x)
@@ -20,7 +21,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <limits>
-#include <optional>
 
 #define VK_CHECK(expr, msg)                                                                                            \
     if (VkResult result = (expr); result != VK_SUCCESS && result != VK_INCOMPLETE) {                                   \
@@ -55,12 +55,11 @@ int main() {
 
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &memory_properties);
-    v2d::Vector<VkMemoryType> memory_types;
-    for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
-        memory_types.push(memory_properties.memoryTypes[i]);
-    }
+    v2d::Vector<VkMemoryType> memory_types(memory_properties.memoryTypeCount);
+    std::copy_n(static_cast<const VkMemoryType *>(memory_properties.memoryTypes), memory_properties.memoryTypeCount,
+                memory_types.data());
     auto allocate_memory = [&](const VkMemoryRequirements &requirements, VkMemoryPropertyFlags flags) {
-        std::optional<std::uint32_t> memory_type_index;
+        v2d::Optional<std::uint32_t> memory_type_index;
         for (std::uint32_t i = 0; const auto &memory_type : memory_types) {
             if ((requirements.memoryTypeBits & (1u << i++)) == 0) {
                 continue;
@@ -68,7 +67,7 @@ int main() {
             if ((memory_type.propertyFlags & flags) != flags) {
                 continue;
             }
-            memory_type_index = i - 1;
+            memory_type_index.emplace(i - 1);
             break;
         }
         V2D_ENSURE(memory_type_index);
@@ -251,7 +250,7 @@ int main() {
     VK_CHECK(vkBindBufferMemory(context.device(), object_buffer, object_buffer_memory, 0),
              "Failed to object buffer memory")
 
-    std::array descriptor_pool_sizes{
+    v2d::Array descriptor_pool_sizes{
         VkDescriptorPoolSize{
             .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1,
@@ -264,14 +263,14 @@ int main() {
     VkDescriptorPoolCreateInfo descriptor_pool_ci{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = 1,
-        .poolSizeCount = static_cast<std::uint32_t>(descriptor_pool_sizes.size()),
+        .poolSizeCount = descriptor_pool_sizes.size(),
         .pPoolSizes = descriptor_pool_sizes.data(),
     };
     VkDescriptorPool descriptor_pool = nullptr;
     VK_CHECK(vkCreateDescriptorPool(context.device(), &descriptor_pool_ci, nullptr, &descriptor_pool),
              "Failed to create descriptor pool")
 
-    std::array descriptor_bindings{
+    v2d::Array descriptor_bindings{
         // Atlas binding.
         VkDescriptorSetLayoutBinding{
             .binding = 1,
@@ -289,7 +288,7 @@ int main() {
     };
     VkDescriptorSetLayoutCreateInfo descriptor_set_layout_ci{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = static_cast<std::uint32_t>(descriptor_bindings.size()),
+        .bindingCount = descriptor_bindings.size(),
         .pBindings = descriptor_bindings.data(),
     };
     VkDescriptorSetLayout descriptor_set_layout = nullptr;
@@ -315,7 +314,7 @@ int main() {
         .buffer = object_buffer,
         .range = VK_WHOLE_SIZE,
     };
-    std::array descriptor_writes{
+    v2d::Array descriptor_writes{
         VkWriteDescriptorSet{
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = descriptor_set,
@@ -333,8 +332,7 @@ int main() {
             .pBufferInfo = &object_buffer_info,
         },
     };
-    vkUpdateDescriptorSets(context.device(), static_cast<std::uint32_t>(descriptor_writes.size()),
-                           descriptor_writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(context.device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
 
     VkAttachmentDescription attachment{
         .format = swapchain.surface_format(),
@@ -461,7 +459,7 @@ int main() {
 
     auto *vertex_shader = load_shader(context.device(), "shaders/main.vert.spv");
     auto *fragment_shader = load_shader(context.device(), "shaders/main.frag.spv");
-    std::array shader_stage_cis{
+    v2d::Array shader_stage_cis{
         VkPipelineShaderStageCreateInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -584,8 +582,8 @@ int main() {
         };
         vkQueueSubmit(queue, 1, &submit_info, fence);
 
-        std::array wait_semaphores{rendering_finished_semaphore};
-        swapchain.present(image_index, {wait_semaphores.data(), wait_semaphores.size()});
+        v2d::Array wait_semaphores{rendering_finished_semaphore};
+        swapchain.present(image_index, wait_semaphores.span());
         window.poll_events();
         world.update(dt);
         count += dt;

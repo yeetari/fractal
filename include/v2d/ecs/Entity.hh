@@ -1,9 +1,9 @@
 #pragma once
 
+#include <v2d/support/Array.hh>
 #include <v2d/support/SparseSet.hh>
 #include <v2d/support/TypeErased.hh>
 
-#include <array>
 #include <cstddef>
 #include <utility>
 
@@ -92,7 +92,7 @@ class EntityManager {
     friend class EntitySingleView;
 
 private:
-    std::array<TypeErased<SparseSet, EntityId>, 16> m_component_sets;
+    Array<TypeErased<SparseSet, EntityId>, 16> m_component_sets;
     EntityId m_count{0};
     EntityId m_next_id{0};
 

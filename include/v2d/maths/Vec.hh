@@ -1,13 +1,14 @@
 #pragma once
 
-#include <array>
+#include <v2d/support/Array.hh>
+
 #include <cstdint>
 
 namespace v2d {
 
 template <typename T, unsigned ElementCount>
 class Vec {
-    std::array<T, ElementCount> m_elements;
+    Array<T, ElementCount> m_elements;
 
 public:
     constexpr Vec() : m_elements{T{}} {}

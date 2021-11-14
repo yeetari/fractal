@@ -55,8 +55,8 @@ public:
 
     T &first() { return begin()[0]; }
     const T &first() const { return begin()[0]; }
-    T &last() { return begin()[m_size - 1]; }
-    const T &last() const { return begin()[m_size - 1]; }
+    T &last() { return end()[-1]; }
+    const T &last() const { return end()[-1]; }
 
     bool empty() const { return m_size == 0; }
     T *data() const { return m_data; }

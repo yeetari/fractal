@@ -15,6 +15,28 @@
      static_cast<std::uint32_t>(patch))
 
 namespace v2d {
+namespace {
+
+VkBufferUsageFlags buffer_usage(BufferType type) {
+    switch (type) {
+    case BufferType::StorageBuffer:
+        return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+    V2D_ENSURE_NOT_REACHED();
+}
+
+VkMemoryPropertyFlags memory_flags(MemoryType type) {
+    switch (type) {
+    case MemoryType::CpuVisible:
+        // TODO: Use `VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT` if available.
+        return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    case MemoryType::GpuOnly:
+        return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    }
+    V2D_ENSURE_NOT_REACHED();
+}
+
+} // namespace
 
 Context::Context(Span<const char *const> extensions) {
     VkApplicationInfo application_info{
@@ -51,6 +73,12 @@ Context::Context(Span<const char *const> extensions) {
     VkResult enumeration_result = vkEnumeratePhysicalDevices(m_instance, &physical_device_count, &m_physical_device);
     V2D_ENSURE(enumeration_result == VK_SUCCESS || enumeration_result == VK_INCOMPLETE);
 
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
+    m_memory_types.ensure_size(memory_properties.memoryTypeCount);
+    std::copy_n(static_cast<const VkMemoryType *>(memory_properties.memoryTypes), memory_properties.memoryTypeCount,
+                m_memory_types.data());
+
     std::uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &queue_family_count, nullptr);
     m_queue_families.ensure_size(queue_family_count);
@@ -86,6 +114,51 @@ Context::Context(Span<const char *const> extensions) {
 Context::~Context() {
     vkDestroyDevice(m_device, nullptr);
     vkDestroyInstance(m_instance, nullptr);
+}
+
+Optional<std::uint32_t> Context::find_memory_type_index(const VkMemoryRequirements &requirements,
+                                                        MemoryType type) const {
+    const auto flags = memory_flags(type);
+    for (std::uint32_t i = 0; i < m_memory_types.size(); i++) {
+        if ((requirements.memoryTypeBits & (1u << i)) == 0) {
+            continue;
+        }
+        if ((m_memory_types[i].propertyFlags & flags) != flags) {
+            continue;
+        }
+        return i;
+    }
+    return {};
+}
+
+VkDeviceMemory Context::allocate_memory(const VkMemoryRequirements &requirements, MemoryType type) const {
+    auto memory_type_index = *find_memory_type_index(requirements, type);
+    VkMemoryAllocateInfo memory_ai{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = memory_type_index,
+    };
+    VkDeviceMemory memory;
+    [[maybe_unused]] VkResult result = vkAllocateMemory(m_device, &memory_ai, nullptr, &memory);
+    V2D_ASSERT(result == VK_SUCCESS);
+    return memory;
+}
+
+Buffer Context::create_buffer(VkDeviceSize size, BufferType type, MemoryType memory_type) const {
+    VkBufferCreateInfo buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = buffer_usage(type),
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer buffer;
+    vkCreateBuffer(m_device, &buffer_ci, nullptr, &buffer);
+
+    VkMemoryRequirements requirements;
+    vkGetBufferMemoryRequirements(m_device, buffer, &requirements);
+    VkDeviceMemory memory = allocate_memory(requirements, memory_type);
+    vkBindBufferMemory(m_device, buffer, memory, 0);
+    return {this, buffer, memory};
 }
 
 void Context::wait_idle() const {

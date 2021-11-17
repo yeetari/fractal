@@ -53,34 +53,6 @@ int main() {
     v2d::Window window(800, 600);
     v2d::Swapchain swapchain(context, window);
 
-    VkPhysicalDeviceMemoryProperties memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(context.physical_device(), &memory_properties);
-    v2d::Vector<VkMemoryType> memory_types(memory_properties.memoryTypeCount);
-    std::copy_n(static_cast<const VkMemoryType *>(memory_properties.memoryTypes), memory_properties.memoryTypeCount,
-                memory_types.data());
-    auto allocate_memory = [&](const VkMemoryRequirements &requirements, VkMemoryPropertyFlags flags) {
-        v2d::Optional<std::uint32_t> memory_type_index;
-        for (std::uint32_t i = 0; const auto &memory_type : memory_types) {
-            if ((requirements.memoryTypeBits & (1u << i++)) == 0) {
-                continue;
-            }
-            if ((memory_type.propertyFlags & flags) != flags) {
-                continue;
-            }
-            memory_type_index.emplace(i - 1);
-            break;
-        }
-        V2D_ENSURE(memory_type_index);
-        VkMemoryAllocateInfo memory_ai{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .allocationSize = requirements.size,
-            .memoryTypeIndex = *memory_type_index,
-        };
-        VkDeviceMemory memory;
-        VK_CHECK(vkAllocateMemory(context.device(), &memory_ai, nullptr, &memory), "Failed to allocate memory")
-        return memory;
-    };
-
     std::uint32_t atlas_width;
     std::uint32_t atlas_height;
     auto *atlas_texture = stbi_load("atlas.png", reinterpret_cast<int *>(&atlas_width),
@@ -100,8 +72,8 @@ int main() {
     VkMemoryRequirements atlas_staging_buffer_requirements;
     vkGetBufferMemoryRequirements(context.device(), atlas_staging_buffer, &atlas_staging_buffer_requirements);
 
-    VkDeviceMemory atlas_staging_buffer_memory = allocate_memory(
-        atlas_staging_buffer_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    VkDeviceMemory atlas_staging_buffer_memory =
+        context.allocate_memory(atlas_staging_buffer_requirements, v2d::MemoryType::CpuVisible);
     VK_CHECK(vkBindBufferMemory(context.device(), atlas_staging_buffer, atlas_staging_buffer_memory, 0),
              "Failed to bind atlas staging buffer memory")
 
@@ -129,7 +101,7 @@ int main() {
 
     VkMemoryRequirements atlas_image_requirements;
     vkGetImageMemoryRequirements(context.device(), atlas_image, &atlas_image_requirements);
-    VkDeviceMemory atlas_image_memory = allocate_memory(atlas_image_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkDeviceMemory atlas_image_memory = context.allocate_memory(atlas_image_requirements, v2d::MemoryType::GpuOnly);
     VK_CHECK(vkBindImageMemory(context.device(), atlas_image, atlas_image_memory, 0),
              "Failed to bind atlas image memory")
 
@@ -232,24 +204,6 @@ int main() {
     VK_CHECK(vkCreateSampler(context.device(), &atlas_sampler_ci, nullptr, &atlas_sampler),
              "Failed to create atlas sampler")
 
-    VkBufferCreateInfo object_buffer_ci{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(v2d::ObjectData) * 5,
-        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    VkBuffer object_buffer = nullptr;
-    VK_CHECK(vkCreateBuffer(context.device(), &object_buffer_ci, nullptr, &object_buffer),
-             "Failed to create object buffer")
-
-    VkMemoryRequirements object_buffer_requirements;
-    vkGetBufferMemoryRequirements(context.device(), object_buffer, &object_buffer_requirements);
-    VkDeviceMemory object_buffer_memory = allocate_memory(
-        object_buffer_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    VK_CHECK(vkBindBufferMemory(context.device(), object_buffer, object_buffer_memory, 0),
-             "Failed to object buffer memory")
-
     v2d::Array descriptor_pool_sizes{
         VkDescriptorPoolSize{
             .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -310,10 +264,6 @@ int main() {
         .imageView = atlas_image_view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
-    VkDescriptorBufferInfo object_buffer_info{
-        .buffer = object_buffer,
-        .range = VK_WHOLE_SIZE,
-    };
     v2d::Array descriptor_writes{
         VkWriteDescriptorSet{
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -322,14 +272,6 @@ int main() {
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .pImageInfo = &atlas_image_info,
-        },
-        VkWriteDescriptorSet{
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = descriptor_set,
-            .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &object_buffer_info,
         },
     };
     vkUpdateDescriptorSets(context.device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
@@ -507,22 +449,15 @@ int main() {
     VK_CHECK(vkCreateSemaphore(context.device(), &semaphore_ci, nullptr, &rendering_finished_semaphore),
              "Failed to create semaphore")
 
-    v2d::ObjectData *object_data;
-    vkMapMemory(context.device(), object_buffer_memory, 0, VK_WHOLE_SIZE, 0, reinterpret_cast<void **>(&object_data));
-
     v2d::World world;
-    world.add<v2d::RenderSystem>(object_data);
-    for (std::size_t i = 0; i < 3; i++) {
-        auto entity = world.create_entity();
-        entity.add<v2d::Transform>(v2d::Vec2f(0.0f));
-        if (i == 0) {
-            entity.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
-        } else {
-            entity.add<v2d::Sprite>(v2d::Vec2u(1u, 0u));
-        }
-    }
+    world.add<v2d::RenderSystem>(context, descriptor_set);
+    auto player = world.create_entity();
+    player.add<v2d::Transform>(v2d::Vec2f(0.0f));
+    player.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
 
-    float count = 0.0f;
+    v2d::Vector<v2d::EntityId> entities;
+
+    int foo = 0;
     std::chrono::time_point<std::chrono::steady_clock> previous_time;
     while (!window.should_close()) {
         auto current_time = std::chrono::steady_clock::now();
@@ -532,7 +467,7 @@ int main() {
         // TODO: Record command buffer here, before waiting for fence, instead?
         vkWaitForFences(context.device(), 1, &fence, VK_TRUE, std::numeric_limits<std::uint64_t>::max());
         vkResetFences(context.device(), 1, &fence);
-
+        world.update(dt);
         vkResetCommandPool(context.device(), command_pool, 0);
         VkCommandBufferBeginInfo cmd_buf_bi{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -559,13 +494,11 @@ int main() {
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set,
                                 0, nullptr);
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        for (float translation = 0.0f; auto [entity, transform] : world.view<v2d::Transform>()) {
-            const float scale = 42.0f * std::abs(std::sin(count)) * 8.0f;
-            transform->set_position((window.mouse_position() + v2d::Vec2f(translation, 0.0f)) / window.resolution());
-            transform->set_scale(v2d::Vec2f(scale) / window.resolution());
-            translation += 200.0f;
+        std::size_t object_count = 0;
+        for (auto [entity, sprite] : world.view<v2d::Sprite>()) {
+            object_count++;
         }
-        vkCmdDraw(command_buffer, 6, 3, 0, 0);
+        vkCmdDraw(command_buffer, 6, object_count, 0, 0);
         vkCmdEndRenderPass(command_buffer);
         vkEndCommandBuffer(command_buffer);
 
@@ -582,14 +515,35 @@ int main() {
         };
         vkQueueSubmit(queue, 1, &submit_info, fence);
 
+        if (foo++ < 100) {
+            auto entity = world.create_entity();
+            entity.add<v2d::Transform>(v2d::Vec2f(0.0f));
+            entity.add<v2d::Sprite>(v2d::Vec2u(1u, 0u));
+            entities.push(entity.id());
+        } else if (world.entity_count() > 1) {
+            for (auto *it = entities.end(); it != entities.begin();) {
+                it--;
+                world.destroy_entity(*it);
+            }
+        } else if (world.entity_count() == 1) {
+            entities.clear();
+            foo = 0;
+        }
+
+        for (v2d::Vec2f translation(42.0f); auto [entity, transform] : world.view<v2d::Transform>()) {
+            transform->set_position(translation / window.resolution());
+            transform->set_scale(v2d::Vec2f(42.0f) / window.resolution());
+            translation += v2d::Vec2f(42.0f, 0.0f);
+            if (translation.x() > window.resolution().x() - 42.0f) {
+                translation = v2d::Vec2f(42.0f, translation.y() + 42.0f);
+            }
+        }
+
         v2d::Array wait_semaphores{rendering_finished_semaphore};
         swapchain.present(image_index, wait_semaphores.span());
         window.poll_events();
-        world.update(dt);
-        count += dt;
     }
     context.wait_idle();
-    vkUnmapMemory(context.device(), object_buffer_memory);
     vkDestroySemaphore(context.device(), rendering_finished_semaphore, nullptr);
     vkDestroySemaphore(context.device(), image_available_semaphore, nullptr);
     vkDestroyFence(context.device(), fence, nullptr);
@@ -601,8 +555,6 @@ int main() {
     vkDestroyRenderPass(context.device(), render_pass, nullptr);
     vkDestroyDescriptorSetLayout(context.device(), descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(context.device(), descriptor_pool, nullptr);
-    vkFreeMemory(context.device(), object_buffer_memory, nullptr);
-    vkDestroyBuffer(context.device(), object_buffer, nullptr);
     vkDestroySampler(context.device(), atlas_sampler, nullptr);
     vkDestroyImageView(context.device(), atlas_image_view, nullptr);
     vkDestroyCommandPool(context.device(), command_pool, nullptr);

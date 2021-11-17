@@ -1,21 +1,21 @@
 #pragma once
 
 #include <v2d/ecs/System.hh>
-#include <v2d/maths/Vec.hh>
+#include <v2d/gfx/Buffer.hh>
 
 namespace v2d {
 
-struct ObjectData {
-    Vec2f position;
-    Vec2f scale;
-    Vec2f sprite_cell;
-};
+class Context;
 
 class RenderSystem final : public System {
-    ObjectData *const m_object_data;
+    const Context &m_context;
+    const VkDescriptorSet m_descriptor_set;
+    v2d::Buffer m_object_buffer;
+    std::size_t m_object_capacity{0};
 
 public:
-    explicit RenderSystem(ObjectData *object_data) : m_object_data(object_data) {}
+    RenderSystem(const Context &context, VkDescriptorSet descriptor_set)
+        : m_context(context), m_descriptor_set(descriptor_set) {}
 
     void update(World *world, float dt) override;
 };

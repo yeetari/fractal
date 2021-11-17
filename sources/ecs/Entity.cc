@@ -12,8 +12,13 @@ Entity EntityManager::create_entity() {
     return {m_next_id++, this};
 }
 
-void EntityManager::destroy_entity(EntityId) {
-    V2D_ENSURE_NOT_REACHED();
+void EntityManager::destroy_entity(EntityId id) {
+    m_count--;
+    for (auto &set : m_component_sets) {
+        if (set.as<std::byte>().contains(id)) {
+            set.as<std::byte>().remove(id);
+        }
+    }
 }
 
 } // namespace v2d

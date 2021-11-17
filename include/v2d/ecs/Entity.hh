@@ -37,14 +37,16 @@ public:
 template <typename C>
 class EntitySingleIterator {
     EntityManager *const m_manager;
-    std::pair<EntityId, C> *m_current;
+    EntityId *m_current_id;
+    C *m_current_component;
 
 public:
-    EntitySingleIterator(EntityManager *manager, std::pair<EntityId, C> *current)
-        : m_manager(manager), m_current(current) {}
+    EntitySingleIterator(EntityManager *manager, EntityId *current_id, C *current_component)
+        : m_manager(manager), m_current_id(current_id), m_current_component(current_component) {}
 
     EntitySingleIterator &operator++() {
-        m_current++;
+        m_current_id++;
+        m_current_component++;
         return *this;
     }
     auto operator<=>(const EntitySingleIterator &) const = default;
@@ -144,7 +146,7 @@ void Entity::remove() {
 
 template <typename C>
 std::pair<Entity, C *> EntitySingleIterator<C>::operator*() const {
-    return std::make_pair(Entity(m_current->first, m_manager), &m_current->second);
+    return std::make_pair(Entity(*m_current_id, m_manager), m_current_component);
 }
 
 template <typename... Comps>
@@ -174,12 +176,12 @@ EntitySingleView<C>::EntitySingleView(EntityManager *manager)
 
 template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::begin() const {
-    return {m_manager, m_component_set.begin()};
+    return {m_manager, m_component_set.dense_begin(), m_component_set.storage_begin()};
 }
 
 template <typename C>
 EntitySingleIterator<C> EntitySingleView<C>::end() const {
-    return {m_manager, m_component_set.end()};
+    return {m_manager, m_component_set.dense_end(), m_component_set.storage_end()};
 }
 
 template <typename... Comps>

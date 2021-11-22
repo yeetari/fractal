@@ -10,6 +10,7 @@ class Context;
 
 enum class BufferType {
     StorageBuffer,
+    TransferSrc,
 };
 
 class Buffer {

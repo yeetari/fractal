@@ -1,5 +1,6 @@
 #pragma once
 
+#include <v2d/maths/Common.hh>
 #include <v2d/support/Array.hh>
 
 #include <cstdint>
@@ -45,10 +46,55 @@ public:
         return *this;
     }
 
-    Vec operator+(const Vec &rhs) { return Vec(*this) += rhs; }
-    Vec operator-(const Vec &rhs) { return Vec(*this) -= rhs; }
-    Vec operator*(const Vec &rhs) { return Vec(*this) *= rhs; }
-    Vec operator/(const Vec &rhs) { return Vec(*this) /= rhs; }
+    Vec operator+(const Vec &rhs) const { return Vec(*this) += rhs; }
+    Vec operator-(const Vec &rhs) const { return Vec(*this) -= rhs; }
+    Vec operator*(const Vec &rhs) const { return Vec(*this) *= rhs; }
+    Vec operator/(const Vec &rhs) const { return Vec(*this) /= rhs; }
+
+    Vec abs() const {
+        Vec ret;
+        for (unsigned i = 0; i < ElementCount; i++) {
+            ret.m_elements[i] = v2d::abs(m_elements[i]);
+        }
+        return ret;
+    }
+
+    float dot(const Vec &rhs) const {
+        float ret = 0.0f;
+        for (unsigned i = 0; i < ElementCount; i++) {
+            ret += m_elements[i] * rhs.m_elements[i];
+        }
+        return ret;
+    }
+
+    float magnitude() const { return v2d::sqrt(square_magnitude()); }
+    float square_magnitude() const { return dot(*this); }
+
+    Vec &normalise() {
+        float inv_mag = 1.0f / magnitude();
+        for (unsigned i = 0; i < ElementCount; i++) {
+            m_elements[i] *= inv_mag;
+        }
+        return *this;
+    }
+    Vec normalised() const { return Vec(*this).normalise(); }
+
+    bool operator<(const Vec &rhs) const {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            if (m_elements[i] >= rhs.m_elements[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+    bool operator>(const Vec &rhs) const {
+        for (unsigned i = 0; i < ElementCount; i++) {
+            if (m_elements[i] <= rhs.m_elements[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     constexpr T x() const requires(ElementCount >= 1) { return m_elements[0]; }
     constexpr T y() const requires(ElementCount >= 2) { return m_elements[1]; }

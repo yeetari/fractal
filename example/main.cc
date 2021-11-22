@@ -6,6 +6,9 @@
 #include <v2d/gfx/Sprite.hh>
 #include <v2d/gfx/Swapchain.hh>
 #include <v2d/maths/Vec.hh>
+#include <v2d/physics/BoxCollider.hh>
+#include <v2d/physics/PhysicsSystem.hh>
+#include <v2d/physics/RigidBody.hh>
 #include <v2d/support/Assert.hh>
 #include <v2d/support/Optional.hh>
 #include <v2d/support/Vector.hh>
@@ -16,11 +19,11 @@
 #include <vulkan/vulkan_core.h>
 
 #include <chrono>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
+#include <random>
 
 #define VK_CHECK(expr, msg)                                                                                            \
     if (VkResult result = (expr); result != VK_SUCCESS && result != VK_INCOMPLETE) {                                   \
@@ -59,28 +62,10 @@ int main() {
                                     reinterpret_cast<int *>(&atlas_height), nullptr, STBI_rgb_alpha);
     V2D_ENSURE(atlas_texture != nullptr);
 
-    VkBufferCreateInfo atlas_staging_buffer_ci{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = atlas_width * atlas_height * 4,
-        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    VkBuffer atlas_staging_buffer = nullptr;
-    VK_CHECK(vkCreateBuffer(context.device(), &atlas_staging_buffer_ci, nullptr, &atlas_staging_buffer),
-             "Failed to create atlas staging buffer")
-
-    VkMemoryRequirements atlas_staging_buffer_requirements;
-    vkGetBufferMemoryRequirements(context.device(), atlas_staging_buffer, &atlas_staging_buffer_requirements);
-
-    VkDeviceMemory atlas_staging_buffer_memory =
-        context.allocate_memory(atlas_staging_buffer_requirements, v2d::MemoryType::CpuVisible);
-    VK_CHECK(vkBindBufferMemory(context.device(), atlas_staging_buffer, atlas_staging_buffer_memory, 0),
-             "Failed to bind atlas staging buffer memory")
-
-    void *staging_data;
-    vkMapMemory(context.device(), atlas_staging_buffer_memory, 0, VK_WHOLE_SIZE, 0, &staging_data);
-    std::memcpy(staging_data, atlas_texture, atlas_width * atlas_height * 4);
-    vkUnmapMemory(context.device(), atlas_staging_buffer_memory);
+    auto atlas_staging_buffer = context.create_buffer(atlas_width * atlas_height * 4, v2d::BufferType::TransferSrc,
+                                                      v2d::MemoryType::CpuVisible);
+    auto *atlas_staging_data = atlas_staging_buffer.map_raw();
+    std::memcpy(atlas_staging_data, atlas_texture, atlas_width * atlas_height * 4);
     stbi_image_free(atlas_texture);
 
     VkImageCreateInfo atlas_image_ci{
@@ -157,7 +142,7 @@ int main() {
         },
         .imageExtent = {atlas_width, atlas_height, 1},
     };
-    vkCmdCopyBufferToImage(command_buffer, atlas_staging_buffer, atlas_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+    vkCmdCopyBufferToImage(command_buffer, *atlas_staging_buffer, atlas_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                            &atlas_copy);
     atlas_transition_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     atlas_transition_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -173,8 +158,6 @@ int main() {
     };
     vkQueueSubmit(queue, 1, &transfer_si, nullptr);
     vkQueueWaitIdle(queue);
-    vkFreeMemory(context.device(), atlas_staging_buffer_memory, nullptr);
-    vkDestroyBuffer(context.device(), atlas_staging_buffer, nullptr);
 
     VkImageViewCreateInfo atlas_image_view_ci{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -450,15 +433,69 @@ int main() {
              "Failed to create semaphore")
 
     v2d::World world;
+    world.add<v2d::PhysicsSystem>();
     world.add<v2d::RenderSystem>(context, descriptor_set);
+
     auto player = world.create_entity();
-    player.add<v2d::Transform>(v2d::Vec2f(0.0f));
-    player.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
+    player.add<v2d::Transform>(v2d::Vec2f(0.0f, 5.0f * 40.0f), v2d::Vec2f(42.0f));
+    player.add<v2d::Sprite>(v2d::Vec2u(1u, 0u));
+    player.add<v2d::BoxCollider>(v2d::Vec2f(15.0f, 21.0f));
+    player.add<v2d::RigidBody>(1.0f, 0.05f);
 
-    v2d::Vector<v2d::EntityId> entities;
+    auto radial_start = world.create_entity();
+    radial_start.add<v2d::Transform>(v2d::Vec2f(42.0f * 8.0f, 0.0f), v2d::Vec2f(21.0f));
+    radial_start.add<v2d::Sprite>(v2d::Vec2u(2u, 0u));
 
-    int foo = 0;
-    std::chrono::time_point<std::chrono::steady_clock> previous_time;
+    v2d::Vector<v2d::Entity> sliding_platforms;
+    for (int i = 0; i < 5; i++) {
+        auto platform = world.create_entity();
+        platform.add<v2d::Transform>(v2d::Vec2f((21.0f + static_cast<float>(i)) * 42.0f, 0.0f), v2d::Vec2f(42.0f));
+        platform.add<v2d::Sprite>(v2d::Vec2u(2u, 0u));
+        platform.add<v2d::BoxCollider>(v2d::Vec2f(21.0f));
+        platform.add<v2d::RigidBody>(0.0f, 0.0f);
+        sliding_platforms.push(platform);
+    }
+
+    v2d::Vector<v2d::Entity> radial_platforms;
+    for (int i = 0; i < 5; i++) {
+        auto platform = world.create_entity();
+        platform.add<v2d::Transform>(v2d::Vec2f(), v2d::Vec2f(42.0f));
+        platform.add<v2d::Sprite>(v2d::Vec2u(2u, 0u));
+        platform.add<v2d::BoxCollider>(v2d::Vec2f(21.0f));
+        platform.add<v2d::RigidBody>(0.0f, 0.0f);
+        radial_platforms.push(platform);
+    }
+
+    for (float x = 0; x < 4; x++) {
+        auto ground_tile = world.create_entity();
+        v2d::Vec2f position(x * 42.0f, 7.0f * 42.0f);
+        ground_tile.add<v2d::Transform>(position, v2d::Vec2f(42.0f));
+        ground_tile.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
+        ground_tile.add<v2d::BoxCollider>(v2d::Vec2f(21.0f));
+        ground_tile.add<v2d::RigidBody>(0.0f, 0.0f);
+    }
+    for (float x = 16; x < 21; x++) {
+        auto ground_tile = world.create_entity();
+        v2d::Vec2f position(x * 42.0f, 0.0f);
+        ground_tile.add<v2d::Transform>(position, v2d::Vec2f(42.0f));
+        ground_tile.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
+        ground_tile.add<v2d::BoxCollider>(v2d::Vec2f(21.0f));
+        ground_tile.add<v2d::RigidBody>(0.0f, 0.0f);
+    }
+
+    for (float x = 36; x < 41; x++) {
+        auto ground_tile = world.create_entity();
+        v2d::Vec2f position(x * 42.0f, 0.0f);
+        ground_tile.add<v2d::Transform>(position, v2d::Vec2f(42.0f));
+        ground_tile.add<v2d::Sprite>(v2d::Vec2u(0u, 0u));
+        ground_tile.add<v2d::BoxCollider>(v2d::Vec2f(21.0f));
+        ground_tile.add<v2d::RigidBody>(0.0f, 0.0f);
+    }
+
+    bool space_down = false;
+    float count = 0.0f;
+
+    auto previous_time = std::chrono::steady_clock::now();
     while (!window.should_close()) {
         auto current_time = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float, std::chrono::seconds::period>(current_time - previous_time).count();
@@ -475,7 +512,7 @@ int main() {
         };
         vkBeginCommandBuffer(command_buffer, &cmd_buf_bi);
 
-        VkClearValue clear_value{.color{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkClearValue clear_value{.color{{0.9f, 0.1f, 0.1f, 1.0f}}};
         VkRenderPassAttachmentBeginInfo attachment_bi{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO,
             .attachmentCount = 1,
@@ -515,33 +552,40 @@ int main() {
         };
         vkQueueSubmit(queue, 1, &submit_info, fence);
 
-        if (foo++ < 100) {
-            auto entity = world.create_entity();
-            entity.add<v2d::Transform>(v2d::Vec2f(0.0f));
-            entity.add<v2d::Sprite>(v2d::Vec2u(1u, 0u));
-            entities.push(entity.id());
-        } else if (world.entity_count() > 1) {
-            for (auto *it = entities.end(); it != entities.begin();) {
-                it--;
-                world.destroy_entity(*it);
-            }
-        } else if (world.entity_count() == 1) {
-            entities.clear();
-            foo = 0;
+        auto &body = player.get<v2d::RigidBody>();
+        float speed = body.in_contact() ? 15.0f : 1.0f;
+        if (window.is_key_down(38)) {
+            body.apply_impulse(v2d::Vec2f(-speed, 0.0f));
+        } else if (window.is_key_down(40)) {
+            body.apply_impulse(v2d::Vec2f(speed, 0.0f));
+        }
+        body.clamp_horizontal_velocity(200.0f);
+        if (window.is_key_down(65) && !space_down && body.in_contact()) {
+            space_down = true;
+            body.apply_impulse(v2d::Vec2f(0.0f, -300.0f));
+        } else if (!window.is_key_down(65)) {
+            space_down = false;
         }
 
-        for (v2d::Vec2f translation(42.0f); auto [entity, transform] : world.view<v2d::Transform>()) {
-            transform->set_position(translation / window.resolution());
-            transform->set_scale(v2d::Vec2f(42.0f) / window.resolution());
-            translation += v2d::Vec2f(42.0f, 0.0f);
-            if (translation.x() > window.resolution().x() - 42.0f) {
-                translation = v2d::Vec2f(42.0f, translation.y() + 42.0f);
-            }
+        for (auto &platform : sliding_platforms) {
+            auto &platform_body = platform.get<v2d::RigidBody>();
+            platform_body.set_velocity({std::sin(count) * 210.0f, 0.0f});
+        }
+
+        for (float x = -84.0f; auto &platform : radial_platforms) {
+            auto &platform_body = platform.get<v2d::RigidBody>();
+            auto &transform = platform.get<v2d::Transform>();
+            v2d::Vec2f target_position(210.0f * std::sin(count / 2.0f), 294.0f * std::cos(count / 2.0f));
+            target_position += radial_start.get<v2d::Transform>().position();
+            target_position += v2d::Vec2f(x, 0.0f);
+            platform_body.set_velocity((target_position - transform.position()) * 5.0f);
+            x += 42.0f;
         }
 
         v2d::Array wait_semaphores{rendering_finished_semaphore};
         swapchain.present(image_index, wait_semaphores.span());
         window.poll_events();
+        count += dt;
     }
     context.wait_idle();
     vkDestroySemaphore(context.device(), rendering_finished_semaphore, nullptr);

@@ -5,6 +5,7 @@
 #include <v2d/support/TypeErased.hh>
 
 #include <cstddef>
+#include <tuple>
 #include <utility>
 
 namespace v2d {

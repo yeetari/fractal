@@ -21,6 +21,8 @@ VkBufferUsageFlags buffer_usage(BufferType type) {
     switch (type) {
     case BufferType::StorageBuffer:
         return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    case BufferType::TransferSrc:
+        return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     }
     V2D_ENSURE_NOT_REACHED();
 }

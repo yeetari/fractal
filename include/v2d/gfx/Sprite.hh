@@ -15,6 +15,8 @@ private:
 public:
     explicit Sprite(const Vec2u &cell) : m_cell(cell) {}
 
+    void set_cell(const Vec2u &cell) { m_cell = cell; }
+
     const Vec2u &cell() const { return m_cell; }
 };
 

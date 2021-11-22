@@ -18,6 +18,7 @@ class Window {
     xcb_intern_atom_reply_t *m_delete_window_atom{nullptr};
     std::uint32_t m_id{0};
 
+    Array<bool, 100> m_keys{};
     std::uint16_t m_mouse_x{0};
     std::uint16_t m_mouse_y{0};
     bool m_should_close{false};
@@ -37,6 +38,8 @@ public:
 
     void close();
     void poll_events();
+
+    bool is_key_down(std::uint16_t key) const { return m_keys[key]; }
 
     std::uint32_t width() const { return m_width; }
     std::uint32_t height() const { return m_height; }

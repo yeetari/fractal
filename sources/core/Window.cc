@@ -26,7 +26,7 @@ Window::Window(std::uint32_t width, std::uint32_t height) : m_width(width), m_he
 
     // Create window on the first screen and set the title.
     m_id = xcb_generate_id(m_connection);
-    std::uint32_t event_mask = XCB_EVENT_MASK_POINTER_MOTION;
+    std::uint32_t event_mask = XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_POINTER_MOTION;
     xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(m_connection)).data;
     xcb_create_window(m_connection, screen->root_depth, m_id, screen->root, 0, 0, width, height, 0,
                       XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, XCB_CW_EVENT_MASK, &event_mask);
@@ -71,6 +71,16 @@ void Window::poll_events() {
     xcb_generic_event_t *event;
     while ((event = xcb_poll_for_event(m_connection)) != nullptr) {
         switch (event->response_type & ~0x80u) {
+        case XCB_KEY_PRESS: {
+            auto *key_press_event = reinterpret_cast<xcb_key_press_event_t *>(event);
+            m_keys[key_press_event->detail] = true;
+            break;
+        }
+        case XCB_KEY_RELEASE: {
+            auto *key_release_event = reinterpret_cast<xcb_key_release_event_t *>(event);
+            m_keys[key_release_event->detail] = false;
+            break;
+        }
         case XCB_MOTION_NOTIFY: {
             auto *motion_event = reinterpret_cast<xcb_motion_notify_event_t *>(event);
             m_mouse_x = motion_event->event_x;

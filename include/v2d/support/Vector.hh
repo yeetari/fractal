@@ -1,9 +1,9 @@
 #pragma once
 
+#include <v2d/maths/Common.hh>
 #include <v2d/support/Assert.hh>
 #include <v2d/support/Span.hh>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -117,7 +117,7 @@ void Vector<T, SizeType>::clear() {
 template <typename T, typename SizeType>
 void Vector<T, SizeType>::ensure_capacity(SizeType capacity) {
     if (capacity > m_capacity) {
-        reallocate(std::max(m_capacity * 2 + 1, capacity));
+        reallocate(v2d::max(m_capacity * 2 + 1, capacity));
     }
 }
 

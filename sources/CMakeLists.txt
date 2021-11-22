@@ -6,4 +6,7 @@ target_sources(v2d PRIVATE
     gfx/Buffer.cc
     gfx/RenderSystem.cc
     gfx/Swapchain.cc
+    physics/Contact.cc
+    physics/PhysicsSystem.cc
+    physics/RigidBody.cc
     support/Assert.cc)

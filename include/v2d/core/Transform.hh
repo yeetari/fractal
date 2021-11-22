@@ -15,10 +15,13 @@ private:
 
 public:
     explicit Transform(const Vec2f &position) : m_position(position) {}
+    explicit Transform(const Vec2f &position, const Vec2f &scale) : m_position(position), m_scale(scale) {}
 
     void set_position(const Vec2f &position) { m_position = position; }
     void set_scale(const Vec2f &scale) { m_scale = scale; }
 
+    Vec2f &position() { return m_position; }
+    Vec2f &scale() { return m_scale; }
     const Vec2f &position() const { return m_position; }
     const Vec2f &scale() const { return m_scale; }
 };
